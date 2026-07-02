@@ -9,8 +9,11 @@ from src.utils.config import (
     BLUR_THRESHOLD,
 )
 from src.capture.camera_stream import CameraStream
-from src.vision.detector import FaceDetector
 from src.storage.file_manager import FileManager
+from src.vision.factory import get_face_detector
+
+TARGET_FPS = 30
+FRAME_TIME = 1.0 / TARGET_FPS
 
 
 def main():
@@ -23,87 +26,75 @@ def main():
         print("[Error] El nombre no puede estar vacío. Proceso abortado.")
         return
 
-    # 1. Preparación del almacenamiento físico
     target_dir = FileManager.create_person_directory(DATASET_DIR, person_name)
-
-    # 2. Inicialización de los componentes de captura y visión
-    detector = FaceDetector(model="hog")
+    detector = get_face_detector()
 
     photo_count = 0
+    # Variable de control de tiempo no bloqueante
+    last_capture_time = 0.0
+    CAPTURE_DELAY = 0.2  # 200ms entre capturas
+
     print(
         f"\n[Info] Iniciando captura. Se requieren {MAX_PHOTOS_PER_PERSON} fotografías."
     )
-    print(
-        "[Info] Colóquese frente a la cámara y realice variaciones leves de ángulo e iluminación."
-    )
-    print("[Info] Presione 'q' en la ventana de video si desea CANCELAR el registro.\n")
 
     try:
-        with CameraStream(url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS) as stream:
+        with CameraStream(
+            url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
+        ) as stream:
             while photo_count < MAX_PHOTOS_PER_PERSON:
+                loop_start = time.time()
+
                 frame = stream.get_frame()
                 if frame is None:
                     continue
 
-                # 3. Validación de Rostros
-                # Optimización: Reducir resolución para inferencia rápida
                 small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-                rgb_small_frame = small_frame[:, :, ::-1]
-                
+                # Optimización O(N) de copia
+                rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+
                 small_face_locations = detector.detect_faces(rgb_small_frame)
-                
-                # Escalar coordenadas de nuevo al tamaño original
+
                 face_locations = [
-                    (top * 4, right * 4, bottom * 4, left * 4) 
+                    (top * 4, right * 4, bottom * 4, left * 4)
                     for top, right, bottom, left in small_face_locations
                 ]
-                
-                face_count = len(face_locations)
 
-                # --- CONTROL DE ESTADOS MEDIANTE COLORIMETRÍA FUNCIONAL ---
-                # Por defecto, estado de espera o error (Amarillo: Precaución / Ajuste requerido)
+                face_count = len(face_locations)
                 status_color = (0, 255, 255)
                 status_text = "Esperando rostro..."
 
                 if face_count == 0:
                     status_text = "ERROR: Ningun rostro detectado"
-                    status_color = (0, 0, 255)  # Rojo: Alerta de ausencia
+                    status_color = (0, 0, 255)
                 elif face_count > 1:
                     status_text = "ERROR: Multiples rostros detectados"
-                    status_color = (0, 0, 255)  # Rojo: Alerta de interferencia
+                    status_color = (0, 0, 255)
                 else:
-                    # Existe exactamente un rostro en escena. Se procede a evaluar su nitidez.
-                    # Se usa frame directamente ya que aún no se le ha dibujado nada encima.
                     is_blurry = FileManager.is_blurry(frame, BLUR_THRESHOLD)
 
                     if is_blurry:
                         status_text = "CALIDAD BAJA: Imagen borrosa o en movimiento"
-                        status_color = (
-                            0,
-                            255,
-                            255,
-                        )  # Amarillo: No cumple el estándar pero el rostro es válido
+                        status_color = (0, 255, 255)
                     else:
-                        # La imagen es útil (Un solo rostro y con nitidez óptima)
-                        photo_count += 1
-                        # Guardamos el fotograma original ANTES de dibujar las cajas delimitadoras
-                        FileManager.save_frame(target_dir, frame, photo_count)
+                        current_time = time.time()
+                        # Control de retardo NO bloqueante
+                        if (current_time - last_capture_time) >= CAPTURE_DELAY:
+                            photo_count += 1
+                            FileManager.save_frame(target_dir, frame, photo_count)
+                            last_capture_time = current_time
 
-                        status_text = (
-                            f"CAPTURANDO: Foto {photo_count}/{MAX_PHOTOS_PER_PERSON}"
-                        )
-                        status_color = (0, 255, 0)  # Verde: Éxito en persistencia
+                            status_text = f"CAPTURANDO: Foto {photo_count}/{MAX_PHOTOS_PER_PERSON}"
+                            status_color = (0, 255, 0)
+                        else:
+                            status_text = "Procesando captura..."
+                            status_color = (0, 255, 0)
 
-                        # Pequeña pausa de control para evitar ráfagas idénticas y fomentar la variedad de ángulos
-                        time.sleep(0.2)
-
-                    # Dibujar la caja delimitadora del rostro detectado para feedback visual
-                    # Se hace DESPUÉS de guardar para no ensuciar la imagen
                     for top, right, bottom, left in face_locations:
-                        cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
+                        cv2.rectangle(
+                            frame, (left, top), (right, bottom), (255, 0, 0), 2
+                        )
 
-                # 4. Renderizado de la Interfaz de Usuario Funcional
-                # Barra superior de estado
                 cv2.putText(
                     frame,
                     status_text,
@@ -113,8 +104,6 @@ def main():
                     status_color,
                     2,
                 )
-
-                # Barra inferior con instrucciones de cancelación
                 cv2.putText(
                     frame,
                     "Presione 'q' para CANCELAR",
@@ -127,21 +116,22 @@ def main():
 
                 cv2.imshow("Registro Base de Datos Facial", frame)
 
-                # 5. Control de Cancelación por el Usuario
                 if cv2.waitKey(1) & 0xFF == ord("q"):
-                    print(
-                        "\n[Advertencia] El registro ha sido cancelado por el usuario de forma manual."
-                    )
+                    print("\n[Advertencia] Registro cancelado manualmente.")
                     break
 
+                # Limitador de Tasa de Refresco para estabilidad térmica
+                loop_duration = time.time() - loop_start
+                if loop_duration < FRAME_TIME:
+                    time.sleep(FRAME_TIME - loop_duration)
+
             if photo_count == MAX_PHOTOS_PER_PERSON:
-                print(f"\n[Éxito] Registro completado exitosamente para: {person_name}")
                 print(
-                    f"[Éxito] Se almacenaron {photo_count} imágenes útiles en '{target_dir}'."
+                    f"\n[Éxito] Se almacenaron {photo_count} imágenes útiles en '{target_dir}'."
                 )
 
     except KeyboardInterrupt:
-        print("\n[Advertencia] Proceso interrumpido desde la consola.")
+        pass
     finally:
         cv2.destroyAllWindows()
 

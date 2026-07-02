@@ -1,11 +1,12 @@
-# src/vision/recognizer.py
+# src/vision/dlib_engine/recognizer.py
 import cv2
 import face_recognition
 import numpy as np
 from typing import List, Tuple, Any
+from src.vision.interfaces import BaseFaceRecognizer
 
 
-class FaceRecognizer:
+class DlibFaceRecognizer(BaseFaceRecognizer):
     def __init__(
         self, known_encodings: List[Any], known_names: List[str], tolerance: float = 0.6
     ):
@@ -19,12 +20,11 @@ class FaceRecognizer:
         if not self.known_encodings:
             return [("Desconocido", 0.0) for _ in face_locations]
 
-        # Solución: Usar OpenCV para forzar una matriz RGB contigua en memoria
+        # Forzar matriz RGB contigua en memoria
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
         face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-        results = []
 
+        results = []
         for face_encoding in face_encodings:
             distances = face_recognition.face_distance(
                 self.known_encodings, face_encoding

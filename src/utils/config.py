@@ -23,3 +23,7 @@ MODELS_DIR: Path = Path("data/models")
 
 # Ruta completa del archivo serializado que contendrá las matrices matemáticas y etiquetas
 MODEL_PATH: Path = MODELS_DIR / "encodings.pkl"
+
+# --- CONFIGURACIÓN DEL MOTOR DE VISIÓN ---
+# Define qué arquitectura de inferencia se utilizará en todo el proyecto
+VISION_ENGINE = "dlib"
