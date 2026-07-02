@@ -1,0 +1,11 @@
+Comandos Codigo:
+Activar entorno virtual
+-python -m venv .venv
+Aricae entorno virtual
+-.\.venv\Scripts\Activate
+Registrar un rostro:
+python main_register.py       
+Cargar rostro al modelo:
+python main_train.py
+Activae sistema de reconomiento
+python main_recognize.py 
