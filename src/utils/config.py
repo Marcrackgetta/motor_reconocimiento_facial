@@ -26,4 +26,9 @@ MODEL_PATH: Path = MODELS_DIR / "encodings.pkl"
 
 # --- CONFIGURACIÓN DEL MOTOR DE VISIÓN ---
 # Define qué arquitectura de inferencia se utilizará en todo el proyecto
-VISION_ENGINE = "dlib"
+VISION_ENGINE = "insightface"
+INSIGHTFACE_MODEL_PACK = "buffalo_l"
+INSIGHTFACE_DET_THRESH = 0.5
+INSIGHTFACE_INPUT_SIZE = (640, 640)
+INSIGHTFACE_EMBEDDING_SIZE = 512
+INSIGHTFACE_REC_THRESH = 0.45

@@ -9,8 +9,11 @@ def get_face_detector() -> BaseFaceDetector:
     if VISION_ENGINE == "dlib":
         from src.vision.dlib_engine.detector import DlibFaceDetector
 
-        # Los parámetros específicos de dlib (como 'hog') quedan ocultos aquí
         return DlibFaceDetector(model="hog")
+    elif VISION_ENGINE == "insightface":
+        from src.vision.insightface_engine.detector import InsightFaceDetector
+
+        return InsightFaceDetector()
     else:
         raise ValueError(f"Motor de visión no soportado: {VISION_ENGINE}")
 
@@ -22,9 +25,19 @@ def get_face_recognizer(
     if VISION_ENGINE == "dlib":
         from src.vision.dlib_engine.recognizer import DlibFaceRecognizer
 
-        # El parámetro tolerance de dlib se inyecta aquí
         return DlibFaceRecognizer(
             known_encodings=known_encodings, known_names=known_names, tolerance=0.6
+        )
+
+    elif VISION_ENGINE == "insightface":
+        # AHORA SÍ CONECTAMOS EL RECONOCEDOR DE ARCFACE
+        from src.vision.insightface_engine.recognizer import InsightFaceRecognizer
+        from src.utils.config import INSIGHTFACE_REC_THRESH
+
+        return InsightFaceRecognizer(
+            known_encodings=known_encodings,
+            known_names=known_names,
+            tolerance=INSIGHTFACE_REC_THRESH,
         )
     else:
         raise ValueError(f"Motor de visión no soportado: {VISION_ENGINE}")
