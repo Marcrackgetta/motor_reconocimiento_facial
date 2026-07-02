@@ -1,0 +1,19 @@
+# Entornos virtuales
+.venv/
+env/
+ENV/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Directorios de datos (Se ignoran los archivos internos, pero no la estructura)
+data/dataset/*
+!data/dataset/.gitkeep
+data/models/*
+!data/models/.gitkeep
+
+# Configuraciones locales de SO
+.DS_Store
+Thumbs.db
