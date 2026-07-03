@@ -1,121 +1,124 @@
-# src/training/trainer.py
-import os
-import cv2
 import time
 import logging
+from pathlib import Path
 from typing import Dict, List, Any
 
-# Importaciones correctas de la Factory y Configuración
-from src.vision.factory import get_face_detector, get_face_recognizer
+import cv2
+
+from src.vision.vision_engine import VisionEngine
 from src.utils.config import INSIGHTFACE_EMBEDDING_SIZE
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
+
 logger = logging.getLogger(__name__)
 
 
 class ModelTrainer:
-    """Clase responsable de procesar el dataset y compilar los encodings faciales."""
+    """
+    Entrenador del modelo facial basado en VisionEngine.
 
-    def __init__(self, *args, **kwargs):
-        # 1. Instanciamos módulos vía Factory
-        self.detector = get_face_detector()
-        self.recognizer = get_face_recognizer(known_encodings=[], known_names=[])
+    Flujo:
+    Imagen → VisionEngine → FrameContext → DetectedFace → embedding
+    """
 
-        # 2. Dimensión estricta para ArcFace
+    def __init__(self):
+        self.engine = VisionEngine()
+
         self.expected_dim = INSIGHTFACE_EMBEDDING_SIZE
 
         self.known_encodings: List[Any] = []
         self.known_names: List[str] = []
 
     def train_from_directory(self, person_directories: List[Any]) -> Dict[str, Any]:
-        """Itera sobre el dataset, usa el motor activo para extraer vectores y valida dimensiones."""
-        total_persons = len(person_directories)
 
-        if total_persons == 0:
-            logger.warning("No se encontraron directorios en el dataset.")
+        if not person_directories:
+            logger.warning("No se encontraron directorios de entrenamiento.")
             return {"encodings": [], "names": []}
 
         start_time = time.time()
-        total_processed = 0
-        total_errors = 0
+
+        total_ok = 0
+        total_fail = 0
 
         for idx, person_dir in enumerate(person_directories, 1):
-            person_dir_str = str(person_dir)
-            person_name = os.path.basename(person_dir_str).replace("_", " ")
-            print(f"[{idx}/{total_persons}] Procesando individuo: {person_name}")
+            person_dir = Path(person_dir)
+            person_name = person_dir.name.replace("_", " ")
 
-            image_files = [
+            print(f"[{idx}/{len(person_directories)}] Procesando: {person_name}")
+
+            images = [
                 f
-                for f in os.listdir(person_dir_str)
-                if f.lower().endswith((".png", ".jpg", ".jpeg"))
+                for f in person_dir.iterdir()
+                if f.suffix.lower() in [".png", ".jpg", ".jpeg"]
             ]
 
-            if not image_files:
-                print("  -> Advertencia: Directorio vacío. Se omitirá.")
+            if not images:
+                print("  -> Carpeta vacía, se omite.")
                 continue
 
-            processed_count = 0
-            error_count = 0
+            ok = 0
+            fail = 0
 
-            for img_name in image_files:
-                img_path = os.path.join(person_dir_str, img_name)
-
+            for img_path in images:
                 try:
-                    frame = cv2.imread(img_path)
+                    frame = cv2.imread(str(img_path))
+
                     if frame is None:
-                        error_count += 1
+                        fail += 1
                         continue
 
-                    # 1. Fase de Detección (Motor Dinámico, ya NO usamos model="hog")
-                    boxes = self.detector.detect_faces(frame)
+                    # 🔵 PIPELINE ÚNICO
+                    context = self.engine.process(frame)
 
-                    if len(boxes) != 1:
-                        error_count += 1
+                    if not context.faces:
+                        fail += 1
                         continue
 
-                    # 2. Fase de Extracción (Motor Dinámico)
-                    embeddings = self.recognizer.extract_embeddings(frame, boxes)
+                    # Tomamos el primer rostro válido
+                    face = context.faces[0]
 
-                    if not embeddings:
-                        error_count += 1
+                    if face.embedding is None:
+                        fail += 1
                         continue
 
-                    encoding = embeddings[0]
+                    encoding = face.embedding
 
                     if len(encoding) != self.expected_dim:
-                        logger.error(
-                            f"Fallo estructural: Se generaron {len(encoding)} dimensiones, se esperaban {self.expected_dim}."
+                        logger.warning(
+                            f"Dimensión inválida: {len(encoding)} != {self.expected_dim}"
                         )
-                        error_count += 1
+                        fail += 1
                         continue
 
                     self.known_encodings.append(encoding)
                     self.known_names.append(person_name)
-                    processed_count += 1
+
+                    ok += 1
 
                 except Exception as e:
-                    logger.error(f"Excepción en {img_path}: {str(e)}")
-                    error_count += 1
+                    logger.error(f"Error en {img_path}: {e}")
+                    fail += 1
 
-            total_processed += processed_count
-            total_errors += error_count
-            print(
-                f"  -> Éxito: {processed_count} imágenes. Descartadas: {error_count}."
-            )
+            total_ok += ok
+            total_fail += fail
 
-        elapsed_time = time.time() - start_time
+            print(f"  -> OK: {ok} | FAIL: {fail}")
 
-        print("\n" + "=" * 40)
-        print(" RESUMEN DE ENTRENAMIENTO ".center(40, "="))
-        print("=" * 40)
-        print("• Motor Activo     : INSIGHTFACE")
-        print(f"• Personas         : {total_persons}")
-        print(f"• Img Procesadas   : {total_processed} (Éxito)")
-        print(f"• Img Descartadas  : {total_errors}")
-        print(f"• Dimensión Vector : {self.expected_dim}")
-        print(f"• Tiempo de CPU    : {elapsed_time:.2f} segundos")
-        print("=" * 40 + "\n")
+        elapsed = time.time() - start_time
 
-        return {"encodings": self.known_encodings, "names": self.known_names}
+        print("\n" + "=" * 50)
+        print(" RESUMEN ENTRENAMIENTO ".center(50, "="))
+        print("=" * 50)
+        print(f"Personas: {len(person_directories)}")
+        print(f"Imágenes OK: {total_ok}")
+        print(f"Imágenes FAIL: {total_fail}")
+        print(f"Tiempo: {elapsed:.2f}s")
+        print("=" * 50)
+
+        return {
+            "encodings": self.known_encodings,
+            "names": self.known_names,
+        }
