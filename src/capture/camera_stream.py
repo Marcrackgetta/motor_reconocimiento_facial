@@ -8,11 +8,14 @@ import numpy as np
 from typing import Optional
 
 # Configuración del sistema de registros (logs) para monitorear la conexión en consola
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 class CameraStream:
     """Clase responsable de gestionar la conexión de red y extracción de video de forma asíncrona."""
-    
+
     def __init__(self, url: str, reconnect_delay: int = 2):
         self.url = url
         self.reconnect_delay = reconnect_delay
@@ -28,14 +31,19 @@ class CameraStream:
         """Establece o restablece la conexión con el servidor de video (IP Webcam)."""
         if self.cap is not None:
             self.cap.release()
-        
+
         logging.info(f"Intentando conectar al flujo: {self.url}")
         self.cap = cv2.VideoCapture(self.url)
-        
+
         if self.cap is not None and self.cap.isOpened():
             self.is_connected = True
-            logging.info("Conexión establecida correctamente.")
-            
+            logging.info(
+                "Conexión establecida correctamente."
+                f"Resolución: "
+                f"{int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
+                f"{int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
+            )
+
             # Iniciar hilo de lectura de fotogramas si no está corriendo
             if self.thread is None or not self.thread.is_alive():
                 self.running = True
@@ -59,7 +67,9 @@ class CameraStream:
                             pass
                     self.q.put(frame)
                 else:
-                    logging.warning("Flujo de video interrumpido o cámara desconectada en el hilo secundario.")
+                    logging.warning(
+                        "Flujo de video interrumpido o cámara desconectada en el hilo secundario."
+                    )
                     self.is_connected = False
             else:
                 time.sleep(0.1)
@@ -91,7 +101,7 @@ class CameraStream:
         self.running = False
         if self.thread is not None and self.thread.is_alive():
             self.thread.join(timeout=1.0)
-            
+
         if self.cap is not None:
             self.cap.release()
             self.is_connected = False

@@ -1,5 +1,4 @@
 # src/storage/file_manager.py
-import os
 import cv2
 import numpy as np
 import logging
@@ -16,11 +15,9 @@ class FileManager:
     """Clase responsable de la gestión física de directorios y archivos de imagen."""
 
     @staticmethod
-    def create_person_directory(base_dir: Path, name: str) -> Path:
-        """
-        Normaliza el nombre del usuario y crea su carpeta correspondiente dentro del dataset.
-        Retorna la ruta absoluta de la carpeta creada.
-        """
+    def create_person_directory(base_dir: Path | str, name: str) -> Path:
+        base_dir = Path(base_dir)
+
         normalized_name = name.strip().replace(" ", "_")
         target_path = base_dir / normalized_name
 
@@ -45,11 +42,14 @@ class FileManager:
         return focus_measure < threshold
 
     @staticmethod
-    def save_frame(directory: Path, frame: np.ndarray, photo_index: int) -> bool:
-        """Guarda físicamente el fotograma en formato PNG dentro del directorio objetivo."""
+    def save_frame(directory: Path | str, frame: np.ndarray, photo_index: int) -> bool:
+        directory = Path(directory)
+
         import uuid
+
         unique_suffix = uuid.uuid4().hex[:8]
         filename = f"face_{photo_index:03d}_{unique_suffix}.png"
+
         full_path = directory / filename
 
         success = cv2.imwrite(str(full_path), frame)
@@ -61,15 +61,17 @@ class FileManager:
         return success
 
     @staticmethod
-    def get_dataset_directories(base_dir: Path) -> List[Path]:
-        """Retorna una lista con las rutas de las carpetas de cada individuo registrado."""
+    def get_dataset_directories(base_dir: Path | str) -> List[Path]:
+        base_dir = Path(base_dir)
+
         if not base_dir.exists():
             return []
 
         return [p for p in base_dir.iterdir() if p.is_dir()]
 
     @staticmethod
-    def save_model(data: Dict[str, Any], file_path: Path) -> bool:
+    def save_model(data: Dict[str, Any], file_path: Path | str) -> bool:
+        file_path = Path(file_path)
         """Serializa el diccionario de encodings y etiquetas y lo guarda en disco."""
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +85,8 @@ class FileManager:
             return False
 
     @staticmethod
-    def load_model(file_path: Path) -> Dict[str, Any]:
+    def load_model(file_path: Path | str) -> Dict[str, Any]:
+        file_path = Path(file_path)
         """Carga en memoria el modelo de encodings previamente entrenado."""
         if not file_path.exists():
             logging.error(f"Archivo de modelo no encontrado en: {file_path}")

@@ -5,6 +5,9 @@ from src.utils.config import CAMERA_URL, RECONNECT_DELAY_SECONDS, MODEL_PATH
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
 from src.vision.factory import get_face_detector, get_face_recognizer
+from src.vision.tracker import FaceTracker
+from src.vision.async_manager import AsyncRecognitionManager
+from pathlib import Path
 
 # -- PARÁMETROS DE OPTIMIZACIÓN --
 TARGET_FPS = 30
@@ -15,7 +18,7 @@ PROCESS_FREQUENCY = 10  # Procesar detección/reconocimiento 1 de cada 10 frames
 def main():
     print("=== MOTOR DE RECONOCIMIENTO FACIAL EN TIEMPO REAL ===")
 
-    model_data = FileManager.load_model(MODEL_PATH)
+    model_data = FileManager.load_model(Path(MODEL_PATH))
     known_encodings = model_data.get("encodings", [])
     known_names = model_data.get("names", [])
 
@@ -26,63 +29,141 @@ def main():
     recognizer = get_face_recognizer(
         known_encodings=known_encodings, known_names=known_names
     )
-    frame_count = 0
-    # Variables de Caché de Estado
-    cached_face_locations = []
-    cached_identities = []
 
-    # Variables para cálculo visual de FPS (independiente del limitador)
-    fps_start_time = time.time()
-    visual_fps = 0
+    async_manager = AsyncRecognitionManager(recognizer)
+
+    tracker = FaceTracker()
+    prev_time = time.time()
 
     try:
         with CameraStream(
             url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
         ) as stream:
             while True:
-                loop_start = time.time()  # Marca de inicio para el limitador
-
                 frame = stream.get_frame()
                 if frame is None:
                     continue
 
-                # 1. Lógica de Frecuencia Espaciada (Caché de Estados)
-                # Solo ejecutamos el bloque pesado en múltiplos de PROCESS_FREQUENCY
-                if frame_count % PROCESS_FREQUENCY == 0:
-                    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-                    # Optimización: cv2.cvtColor es más rápido y eficiente en memoria que [:, :, ::-1]
-                    rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+                # 1. Fase de Detección (SCRFD)
+                t0 = time.perf_counter()
+                face_locations = detector.detect_faces(frame)
+                det_ms = (time.perf_counter() - t0) * 1000
 
-                    small_face_locations = detector.detect_faces(rgb_small_frame)
+                # 2. Fase de Tracking (ByteTrack)
+                t0 = time.perf_counter()
+                tracked_faces = tracker.update(face_locations)
+                track_ms = (time.perf_counter() - t0) * 1000
 
-                    cached_face_locations = [
-                        (top * 4, right * 4, bottom * 4, left * 4)
-                        for top, right, bottom, left in small_face_locations
-                    ]
+                # 3. Fase de Reconocimiento ASÍNCRONO
+                identities = []
+                active_tracks = set()
 
-                    # Si hay rostros, procedemos al reconocimiento
-                    if cached_face_locations:
-                        # Se mantiene el fotograma original según requerimiento, pero optimizando la copia RGB
-                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        cached_identities = recognizer.recognize(
-                            rgb_frame, cached_face_locations
+                for top, right, bottom, left, track_id in tracked_faces:
+                    active_tracks.add(track_id)
+
+                    # Consultamos el estado actual (O(1) desde Caché RAM)
+                    state, name, confidence = async_manager.get_state_and_identity(
+                        track_id
+                    )
+
+                    if state == "NEW":
+                        # Si es nuevo, lo enviamos al ThreadPoolExecutor
+                        async_manager.submit_recognition(
+                            track_id, frame, (top, right, bottom, left)
                         )
-                    else:
-                        cached_identities = []
+                        name, confidence = "Procesando...", 0.0
 
-                frame_count += 1
+                    identities.append((name, confidence))
 
-                # 2. Renderizado de Interfaz (O(1) a O(N rostros) - Extremadamente rápido)
-                for (top, right, bottom, left), (name, confidence) in zip(
-                    cached_face_locations, cached_identities
+                # Limpieza automática de memoria (Prevenir fugas en LOST tracks)
+                async_manager.cleanup_lost_tracks(active_tracks)
+
+                # 4. Cálculo de FPS Globales
+                current_time = time.time()
+                time_diff = current_time - prev_time
+                fps = 1.0 / time_diff if time_diff > 0 else 0.0
+                prev_time = current_time
+
+                # 5. Renderizado de Interfaz y HUD
+                pending, avg_time, rec_tracks, cache_hits = async_manager.get_metrics()
+
+                # Despliegue de métricas en pantalla
+                cv2.putText(
+                    frame,
+                    f"FPS: {int(fps)}",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"ArcFace Avg: {avg_time:.1f} ms",
+                    (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"Pendientes: {pending}",
+                    (10, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"Reconocidos: {rec_tracks}",
+                    (10, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"Cache Hits: {cache_hits}",
+                    (10, 150),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2,
+                )
+
+                cv2.putText(
+                    frame,
+                    f"SCRFD: {det_ms:.1f} ms",
+                    (10, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    f"Tracker: {track_ms:.1f} ms",
+                    (10, 210),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 255),
+                    2,
+                )
+
+                for (top, right, bottom, left, track_id), (name, confidence) in zip(
+                    tracked_faces, identities
                 ):
-                    # Se mantiene la semántica de colorimetría funcional estricta
-                    if name != "Desconocido":
+                    if name not in ["Desconocido", "Procesando...", "Error"]:
                         ui_color = (0, 255, 0)
-                        display_text = f"{name} ({confidence}%)"
+                    elif name == "Procesando...":
+                        ui_color = (0, 255, 255)  # Amarillo: Tarea asíncrona pendiente
                     else:
                         ui_color = (0, 0, 255)
-                        display_text = "Desconocido"
+
+                    display_text = f"ID:{track_id} | {name} ({confidence}%)"
 
                     cv2.rectangle(frame, (left, top), (right, bottom), ui_color, 2)
                     cv2.rectangle(
@@ -102,34 +183,10 @@ def main():
                         1,
                     )
 
-                # Cálculo de FPS visual (promediado para lectura estable)
-                if frame_count % TARGET_FPS == 0:
-                    current_time = time.time()
-                    visual_fps = TARGET_FPS / (current_time - fps_start_time)
-                    fps_start_time = current_time
-
-                fps_color = (
-                    (0, 255, 0) if visual_fps >= (TARGET_FPS * 0.8) else (0, 0, 255)
-                )
-                cv2.putText(
-                    frame,
-                    f"FPS: {int(visual_fps)}",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    fps_color,
-                    2,
-                )
-
-                cv2.imshow("Motor de Vision - Fase Operativa", frame)
+                cv2.imshow("Motor de Visión - Fase Operativa", frame)
 
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-
-                # 3. Limitador Estricto de Tasa de Refresco (Elimina los picos de 400 FPS)
-                loop_duration = time.time() - loop_start
-                if loop_duration < FRAME_TIME:
-                    time.sleep(FRAME_TIME - loop_duration)
 
     except KeyboardInterrupt:
         pass

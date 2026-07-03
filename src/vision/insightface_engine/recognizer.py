@@ -7,7 +7,6 @@ from insightface.app import FaceAnalysis
 from src.vision.interfaces import BaseFaceRecognizer
 from src.utils.config import (
     INSIGHTFACE_MODEL_PACK,
-    INSIGHTFACE_EMBEDDING_SIZE,
     INSIGHTFACE_INPUT_SIZE,
 )
 
@@ -28,33 +27,14 @@ class InsightFaceRecognizer(BaseFaceRecognizer):
     ):
         self.known_encodings = known_encodings
         self.known_names = known_names
-        self.tolerance = tolerance  # Funciona como umbral de similitud del coseno
+        self.tolerance = tolerance
 
-        # --- PREPARACIÓN ARQUITECTÓNICA (Futuras optimizaciones) ---
-        # TODO: Implementar Redis/Memcached para caché de embeddings.
-        # TODO: Implementar ThreadPoolExecutor para reconocimiento asíncrono.
-
-        # Inicializamos detección y reconocimiento para garantizar la alineación por landmarks.
         self.app = FaceAnalysis(
             name=INSIGHTFACE_MODEL_PACK,
             allowed_modules=["detection", "recognition"],
             providers=["CPUExecutionProvider"],
         )
         self.app.prepare(ctx_id=0, det_thresh=0.5, det_size=INSIGHTFACE_INPUT_SIZE)
-
-        # --- CAPA DE VALIDACIÓN TEMPORAL (Protección de Compatibilidad) ---
-        self.is_valid_database = True
-        if self.known_encodings:
-            embedding_dim = len(self.known_encodings[0])
-            if embedding_dim != INSIGHTFACE_EMBEDDING_SIZE:
-                self.is_valid_database = False
-                logger.error(
-                    f"INCOMPATIBILIDAD CRÍTICA: El modelo cargado tiene {embedding_dim} "
-                    f"dimensiones (probablemente Dlib). ArcFace requiere {INSIGHTFACE_EMBEDDING_SIZE}."
-                )
-                logger.warning(
-                    "El reconocedor operará en modo seguro ('Desconocido'). Debe re-entrenar el dataset."
-                )
 
     def _compute_cosine_similarity(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
         """Calcula la similitud del coseno entre dos vectores."""
@@ -70,7 +50,7 @@ class InsightFaceRecognizer(BaseFaceRecognizer):
         # Por defecto, llenamos con "Desconocido"
         results = [("Desconocido", 0.0) for _ in face_locations]
 
-        if not self.is_valid_database or not self.known_encodings or not face_locations:
+        if not self.known_encodings or not face_locations:
             return results
 
         # Extraer todas las caras del frame con sus landmarks y embeddings ArcFace
@@ -120,3 +100,36 @@ class InsightFaceRecognizer(BaseFaceRecognizer):
                     results[i] = (name, confidence)
 
         return results
+
+    def extract_embeddings(
+        self, frame: np.ndarray, face_locations: List[Tuple[int, int, int, int]]
+    ) -> List[list]:
+        """Extrae embeddings de 512 dimensiones usando ArcFace."""
+        faces = self.app.get(frame)
+        embeddings = []
+
+        if not faces:
+            return embeddings
+
+        for top, right, bottom, left in face_locations:
+            cx = (left + right) / 2
+            cy = (top + bottom) / 2
+
+            best_face = None
+            min_dist = float("inf")
+
+            for face in faces:
+                fx1, fy1, fx2, fy2 = face.bbox
+                fcx = (fx1 + fx2) / 2
+                fcy = (fy1 + fy2) / 2
+                dist = (cx - fcx) ** 2 + (cy - fcy) ** 2
+
+                if dist < min_dist:
+                    min_dist = dist
+                    best_face = face
+
+            if best_face is not None:
+                # Convertimos el array a list/array simple para serializar seguro en pickle
+                embeddings.append(best_face.embedding.tolist())
+
+        return embeddings

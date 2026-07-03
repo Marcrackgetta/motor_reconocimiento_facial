@@ -1,34 +1,22 @@
-# src/utils/config.py
-from pathlib import Path
+# src/utils/config.py (Versión Depurada)
 
-# URL del flujo de video (Debe actualizarse con la IP mostrada en la aplicación Android)
-CAMERA_URL: str = "http://192.168.100.35:8080/video"
+CAMERA_URL = "http://192.168.100.35:8080/video"
+RECONNECT_DELAY_SECONDS = 2
+DATASET_DIR = "data/dataset"
+MAX_PHOTOS_PER_PERSON = 30
+BLUR_THRESHOLD = 70.0
 
-# Tiempo de espera en segundos antes de intentar una reconexión
-RECONNECT_DELAY_SECONDS: int = 2
+# --- CONFIGURACIÓN DEL MODELO VECTORIAL ---
+# Ruta única y definitiva del modelo
+MODEL_PATH: str = "data/models/encodings.pkl"
 
-# --- CONFIGURACIÓN DEL MÓDULO DE REGISTRO ---
-# Ruta raíz del almacenamiento de imágenes de entrenamiento
-DATASET_DIR: Path = Path("data/dataset")
-
-# Cantidad estandarizada de fotografías a capturar por cada individuo
-MAX_PHOTOS_PER_PERSON: int = 30
-
-# Umbral matemático para la detección de desenfoque (Varianza del operador Laplaciano)
-# Valores inferiores a este límite se clasificarán como imágenes borrosas.
-BLUR_THRESHOLD: float = 70.0
-
-# Directorio físico donde se guardarán los modelos
-MODELS_DIR: Path = Path("data/models")
-
-# Ruta completa del archivo serializado que contendrá las matrices matemáticas y etiquetas
-MODEL_PATH: Path = MODELS_DIR / "encodings.pkl"
-
-# --- CONFIGURACIÓN DEL MOTOR DE VISIÓN ---
-# Define qué arquitectura de inferencia se utilizará en todo el proyecto
-VISION_ENGINE = "insightface"
+# --- CONFIGURACIÓN INSIGHTFACE (SCRFD + ARCFACE) ---
 INSIGHTFACE_MODEL_PACK = "buffalo_l"
 INSIGHTFACE_DET_THRESH = 0.5
 INSIGHTFACE_INPUT_SIZE = (640, 640)
 INSIGHTFACE_EMBEDDING_SIZE = 512
 INSIGHTFACE_REC_THRESH = 0.45
+
+# --- CONFIGURACIÓN DEL TRACKER (BYTETRACK) ---
+TRACKER_BUFFER = 30
+TRACKER_MATCH_THRESH = 0.8
