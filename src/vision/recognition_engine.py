@@ -8,8 +8,8 @@ from src.vision.vision_engine import VisionEngine
 
 class RecognitionEngine:
     """
-    Motor de reconocimiento con memoria basada en tracking.
-    Evita la ejecución redundante del modelo de embeddings si el rostro ya fue validado.
+    Motor de reconocimiento impulsado por caché.
+    Evita extracciones redundantes si el rastreador mantiene el rostro.
     """
 
     def __init__(
@@ -24,8 +24,8 @@ class RecognitionEngine:
         self.known_names = known_names
         self.threshold = threshold
 
-        # Diccionario de caché: track_id -> {'identity': str, 'confidence': float}
         self.track_cache: Dict[int, Dict[str, Any]] = {}
+        self.cache_ttl = 1000
 
     @staticmethod
     def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -42,12 +42,17 @@ class RecognitionEngine:
             return context
 
         for face in context.faces:
-            # Evaluación directa para permitir que Pylance infiera el tipo como estricto (int)
-            if face.track_id is None:
+            # Extraer de forma segura el valor
+            raw_track_id = getattr(face, "track_id", None)
+
+            # Comprobar si existe un id de seguimiento
+            if raw_track_id is None:
                 continue
 
-            track_id: int = face.track_id
+            # Convertir (castear) explícitamente a entero para satisfacer a Pylance
+            track_id: int = int(raw_track_id)
 
+            # VALIDACIÓN CACHÉ: Si ya lo conocemos, copiamos los datos e ignoramos a la IA pesada
             if track_id in self.track_cache:
                 cached = self.track_cache[track_id]
                 face.identity = cached["identity"]
@@ -57,6 +62,7 @@ class RecognitionEngine:
                 )
                 continue
 
+            # SOLO SI ES NUEVO: Se solicita extraer el embedding al motor de visión
             vision_engine.extract_embedding(frame, face)
 
             if face.embedding is None:
@@ -79,12 +85,14 @@ class RecognitionEngine:
             face.confidence = round(best_similarity * 100, 2)
             face.recognition_state = "RECOGNIZED" if is_recognized else "UNKNOWN"
 
+            # GUARDAR EN CACHÉ PARA PRÓXIMOS FRAMES
             self.track_cache[track_id] = {
                 "identity": face.identity,
                 "confidence": face.confidence,
             }
 
-        if len(self.track_cache) > 1000:
+        # Purga de protección de memoria
+        if len(self.track_cache) > self.cache_ttl:
             self.track_cache.clear()
 
         return context

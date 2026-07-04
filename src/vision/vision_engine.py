@@ -14,8 +14,8 @@ from src.vision.frame_context import FrameContext
 
 class _FaceProxy:
     """
-    Clase proxy estructurada para satisfacer la verificación de tipos estáticos (Pylance)
-    y el formato requerido por el modelo ArcFace interno de InsightFace.
+    Clase proxy estructurada requerida por la API interna del modelo de
+    reconocimiento de InsightFace (ArcFace).
     """
 
     def __init__(self, bbox: np.ndarray, kps: Any) -> None:
@@ -28,7 +28,7 @@ class _FaceProxy:
 class VisionEngine:
     """
     Motor de visión optimizado.
-    Se separa la detección (SCRFD) de la extracción de características (ArcFace).
+    La detección (SCRFD) está estrictamente separada de la extracción de características.
     """
 
     def __init__(self) -> None:
@@ -49,8 +49,8 @@ class VisionEngine:
 
     def detect(self, frame: np.ndarray) -> FrameContext:
         """
-        Ejecuta únicamente la detección espacial y estimación de puntos de referencia.
-        No calcula embeddings.
+        Ejecuta únicamente la detección espacial.
+        No ejecuta modelos pesados de embeddings.
         """
         context = FrameContext(frame=frame)
         detected_faces: List[DetectedFace] = []
@@ -87,12 +87,11 @@ class VisionEngine:
 
     def extract_embedding(self, frame: np.ndarray, face: DetectedFace) -> None:
         """
-        Calcula el embedding para un rostro específico bajo demanda.
+        Calcula el embedding matemáticamente pesado solo bajo demanda.
         """
         if self.rec_model is None or face.landmarks is None:
             return
 
-        # Reconstruir el bounding box en el formato NumPy esperado por InsightFace [x1, y1, x2, y2]
         top, right, bottom, left = face.bbox
         raw_bbox = np.array([left, top, right, bottom], dtype=np.float32)
 
