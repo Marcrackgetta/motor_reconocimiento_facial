@@ -91,8 +91,15 @@ class RecognitionEngine:
                 "confidence": face.confidence,
             }
 
-        # Purga de protección de memoria
+        # Optimization 3: Memory protection purge to prevent Stuttering and Thermal Throttling.
+        # Instead of deleting all items (which forces total re-extraction on the next frame),
+        # we remove only the oldest items, keeping the cache healthy for currently tracked faces.
         if len(self.track_cache) > self.cache_ttl:
-            self.track_cache.clear()
+            # We preserve 80% of the cache capacity (the most recent entries)
+            purge_count = len(self.track_cache) - int(self.cache_ttl * 0.8)
+            # Python dictionaries maintain insertion order, so the first elements are the oldest
+            oldest_keys = list(self.track_cache.keys())[:purge_count]
+            for key in oldest_keys:
+                self.track_cache.pop(key, None)
 
         return context
