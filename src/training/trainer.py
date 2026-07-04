@@ -20,8 +20,8 @@ class ModelTrainer:
     """
     Entrenador del modelo facial basado en VisionEngine.
 
-    Flujo:
-    Imagen → VisionEngine → FrameContext → DetectedFace → embedding
+    Flujo actualizado:
+    Imagen -> VisionEngine.detect -> FrameContext -> VisionEngine.extract_embedding -> embedding
     """
 
     def __init__(self):
@@ -70,15 +70,22 @@ class ModelTrainer:
                         fail += 1
                         continue
 
-                    # 🔵 PIPELINE ÚNICO
-                    context = self.engine.process(frame)
+                    # ==========================================
+                    # NUEVO PIPELINE DIVIDIDO
+                    # ==========================================
+                    # 1. Deteccion espacial del rostro
+                    context = self.engine.detect(frame)
 
                     if not context.faces:
                         fail += 1
                         continue
 
-                    # Tomamos el primer rostro válido
+                    # Se toma el primer rostro valido detectado en la imagen
                     face = context.faces[0]
+
+                    # 2. Extraccion de caracteristicas bajo demanda
+                    self.engine.extract_embedding(frame, face)
+                    # ==========================================
 
                     if face.embedding is None:
                         fail += 1
@@ -102,8 +109,8 @@ class ModelTrainer:
                     logger.error(f"Error en {img_path}: {e}")
                     fail += 1
 
-            total_ok += ok
-            total_fail += fail
+                total_ok += ok
+                total_fail += fail
 
             print(f"  -> OK: {ok} | FAIL: {fail}")
 
