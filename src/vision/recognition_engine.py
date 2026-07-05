@@ -28,9 +28,9 @@ class RecognitionEngine:
         self.track_cache: Dict[int, Dict[str, Any]] = {}
         self.cache_ttl = 1000
 
-        # Optimization 4: Cooldown period in seconds to retry recognizing an "Unknown" face.
-        # This prevents locking an identity to "Unknown" forever if they were looking away initially.
-        self.retry_interval = 1.0
+        # Optimization 4: Bajar el intervalo de reintento de 1.0 a 0.2 segundos.
+        # Esto permite que si el primer frame es malo, corrija la identidad rápidamente.
+        self.retry_interval = 0.2
 
     @staticmethod
     def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:

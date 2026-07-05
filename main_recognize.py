@@ -3,7 +3,6 @@ from pathlib import Path
 
 import cv2
 
-
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
 from src.utils.config import (
@@ -17,8 +16,8 @@ from src.vision.vision_engine import VisionEngine
 from src.vision.tracker import FaceTracker
 from src.vision.recognition_engine import RecognitionEngine
 
-# Configuración del limitador global de FPS
-TARGET_FPS = 60
+# Configuración del limitador global de FPS ajustado a 30
+TARGET_FPS = 30
 FRAME_TIME_LIMIT = 1.0 / TARGET_FPS
 
 
@@ -43,6 +42,7 @@ def main():
     )
 
     prev_time = time.perf_counter()
+    fps_history = []  # Historial para estabilizar la lectura de FPS en pantalla
 
     with CameraStream(
         url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
@@ -65,14 +65,20 @@ def main():
             # 3. Reconocimiento Inteligente (Usa caché, extrae embeddings solo si es rostro nuevo)
             context = recognition_engine.process(frame, context, vision_engine)
 
-            # Cálculo de FPS de renderizado real
+            # Cálculo de FPS de renderizado real usando promedio móvil
             now = time.perf_counter()
-            fps = 1.0 / max(now - prev_time, 0.001)
+            instant_fps = 1.0 / max(now - prev_time, 0.001)
             prev_time = now
+
+            fps_history.append(instant_fps)
+            if len(fps_history) > 15:
+                fps_history.pop(0)
+
+            avg_fps = sum(fps_history) / len(fps_history)
 
             cv2.putText(
                 frame,
-                f"FPS: {int(fps)}",
+                f"FPS: {int(avg_fps)}",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
