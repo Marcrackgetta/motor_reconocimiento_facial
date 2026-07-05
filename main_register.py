@@ -1,6 +1,9 @@
 # main_register.py
 import cv2
 import time
+import sys
+import os
+
 from src.utils.config import (
     CAMERA_URL,
     RECONNECT_DELAY_SECONDS,
@@ -9,131 +12,133 @@ from src.utils.config import (
     BLUR_THRESHOLD,
 )
 from src.capture.camera_stream import CameraStream
-from src.storage.file_manager import FileManager
-from src.vision.factory import get_face_detector
-
-TARGET_FPS = 30
-FRAME_TIME = 1.0 / TARGET_FPS
+from src.vision.vision_engine import VisionEngine
 
 
 def main():
-    print("=== MÓDULO DE REGISTRO DE PERSONAS ===")
+    print("=" * 50)
+    print("=== MÓDULO DE REGISTRO DE IDENTIDADES ===")
+    print("=" * 50)
+
     person_name = input(
-        "Ingrese el nombre completo de la persona a registrar: "
+        "Ingrese el nombre de la persona a registrar (ej. Juan_Perez): "
     ).strip()
-
     if not person_name:
-        print("[Error] El nombre no puede estar vacío. Proceso abortado.")
-        return
+        print("[ERROR] El nombre no puede estar vacío.")
+        sys.exit(1)
 
-    target_dir = FileManager.create_person_directory(DATASET_DIR, person_name)
-    detector = get_face_detector()
+    print("[INFO] Inicializando Motor de Visión (InsightFace)...")
+    # Optimization 5: Replaced broken legacy factory with the unified VisionEngine
+    vision_engine = VisionEngine()
 
-    photo_count = 0
-    # Variable de control de tiempo no bloqueante
-    last_capture_time = 0.0
-    CAPTURE_DELAY = 0.2  # 200ms entre capturas
+    # Create the required dataset directory for the new identity
+    person_dir = os.path.join(DATASET_DIR, person_name)
+    os.makedirs(person_dir, exist_ok=True)
 
+    print(f"[INFO] Conectando a la cámara: {CAMERA_URL}")
+    stream = CameraStream(url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS)
+
+    # Wait for the camera buffer to initialize
+    time.sleep(2.0)
+
+    if not stream.is_connected:
+        print("[ERROR] No se pudo establecer conexión con la cámara.")
+        sys.exit(1)
+
+    print(f"[INFO] Capturando {MAX_PHOTOS_PER_PERSON} fotografías.")
     print(
-        f"\n[Info] Iniciando captura. Se requieren {MAX_PHOTOS_PER_PERSON} fotografías."
+        "[INFO] Mire a la cámara y mueva lentamente la cabeza. Presione 'q' para cancelar."
     )
 
+    captured_photos = 0
+    cooldown_time = 0.0
+
     try:
-        with CameraStream(
-            url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
-        ) as stream:
-            while photo_count < MAX_PHOTOS_PER_PERSON:
-                loop_start = time.time()
+        while captured_photos < MAX_PHOTOS_PER_PERSON:
+            frame = stream.get_frame()
+            if frame is None:
+                time.sleep(0.01)
+                continue
 
-                frame = stream.get_frame()
-                if frame is None:
-                    continue
+            # Optimization 5: Removed useless cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # InsightFace works natively with BGR, converting it to RGB degraded detection.
+            display_frame = frame.copy()
 
-                small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-                # Optimización O(N) de copia
-                rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+            # Accessing the FaceAnalysis instance directly to get bounding boxes
+            # This standardizes the detection pipeline across the entire project
+            faces = vision_engine.app.get(frame)
 
-                small_face_locations = detector.detect_faces(rgb_small_frame)
+            if len(faces) == 1:
+                face = faces[0]
+                box = face.bbox.astype(int)
+                x1, y1, x2, y2 = box
 
-                face_locations = [
-                    (top * 4, right * 4, bottom * 4, left * 4)
-                    for top, right, bottom, left in small_face_locations
-                ]
+                # Prevent out-of-bounds array slicing
+                h, w = frame.shape[:2]
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
 
-                face_count = len(face_locations)
-                status_color = (0, 255, 255)
-                status_text = "Esperando rostro..."
+                face_crop = frame[y1:y2, x1:x2]
 
-                if face_count == 0:
-                    status_text = "ERROR: Ningun rostro detectado"
-                    status_color = (0, 0, 255)
-                elif face_count > 1:
-                    status_text = "ERROR: Multiples rostros detectados"
-                    status_color = (0, 0, 255)
-                else:
-                    is_blurry = FileManager.is_blurry(frame, BLUR_THRESHOLD)
+                if face_crop.size > 0:
+                    # Evaluate blur using Laplacian variance
+                    gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+                    blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
 
-                    if is_blurry:
-                        status_text = "CALIDAD BAJA: Imagen borrosa o en movimiento"
-                        status_color = (0, 255, 255)
-                    else:
-                        current_time = time.time()
-                        # Control de retardo NO bloqueante
-                        if (current_time - last_capture_time) >= CAPTURE_DELAY:
-                            photo_count += 1
-                            FileManager.save_frame(target_dir, frame, photo_count)
-                            last_capture_time = current_time
+                    color = (0, 0, 255)  # Red (Blurry or in cooldown state)
 
-                            status_text = f"CAPTURANDO: Foto {photo_count}/{MAX_PHOTOS_PER_PERSON}"
-                            status_color = (0, 255, 0)
-                        else:
-                            status_text = "Procesando captura..."
-                            status_color = (0, 255, 0)
+                    # Only capture if the image is sharp enough and cooldown has passed
+                    if blur_variance >= BLUR_THRESHOLD and (
+                        time.time() - cooldown_time > 0.4
+                    ):
+                        filename = os.path.join(
+                            person_dir, f"{person_name}_{captured_photos:03d}.jpg"
+                        )
+                        cv2.imwrite(filename, face_crop)
 
-                    for top, right, bottom, left in face_locations:
-                        cv2.rectangle(
-                            frame, (left, top), (right, bottom), (255, 0, 0), 2
+                        captured_photos += 1
+                        cooldown_time = time.time()
+                        color = (0, 255, 0)  # Green (Successful capture)
+                        print(
+                            f"[CAPTURA] Foto {captured_photos}/{MAX_PHOTOS_PER_PERSON} guardada. (Nitidez: {blur_variance:.1f})"
                         )
 
+                    # UI Feedback
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(
+                        display_frame,
+                        f"Progreso: {captured_photos}/{MAX_PHOTOS_PER_PERSON}",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        color,
+                        2,
+                    )
+            elif len(faces) > 1:
                 cv2.putText(
-                    frame,
-                    status_text,
-                    (10, 30),
+                    display_frame,
+                    "ERROR: Multiples rostros detectados",
+                    (20, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    status_color,
+                    0.7,
+                    (0, 0, 255),
                     2,
                 )
-                cv2.putText(
-                    frame,
-                    "Presione 'q' para CANCELAR",
-                    (10, frame.shape[0] - 20),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1,
-                )
 
-                cv2.imshow("Registro Base de Datos Facial", frame)
+            cv2.imshow("Registro de Identidad", display_frame)
 
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    print("\n[Advertencia] Registro cancelado manualmente.")
-                    break
-
-                # Limitador de Tasa de Refresco para estabilidad térmica
-                loop_duration = time.time() - loop_start
-                if loop_duration < FRAME_TIME:
-                    time.sleep(FRAME_TIME - loop_duration)
-
-            if photo_count == MAX_PHOTOS_PER_PERSON:
-                print(
-                    f"\n[Éxito] Se almacenaron {photo_count} imágenes útiles en '{target_dir}'."
-                )
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                print("[INFO] Operación cancelada por el usuario.")
+                break
 
     except KeyboardInterrupt:
-        pass
+        print("\n[INFO] Detenido manualmente por el usuario.")
     finally:
+        stream.release()
         cv2.destroyAllWindows()
+        print(
+            f"[INFO] Proceso finalizado. {captured_photos} fotos registradas para '{person_name}'."
+        )
 
 
 if __name__ == "__main__":
