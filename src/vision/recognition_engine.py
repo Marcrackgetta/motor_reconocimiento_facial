@@ -9,8 +9,9 @@ from src.vision.vision_engine import VisionEngine
 
 class RecognitionEngine:
     """
-    Motor de reconocimiento impulsado por caché.
-    Evita extracciones redundantes si el rastreador mantiene el rostro.
+    Motor de reconocimiento impulsado por caché asíncrona.
+    Evita caídas de FPS limitando las extracciones pesadas a 1 por frame
+    y soluciona los cruces de identidad re-validando periódicamente.
     """
 
     def __init__(
@@ -28,10 +29,6 @@ class RecognitionEngine:
         self.track_cache: Dict[int, Dict[str, Any]] = {}
         self.cache_ttl = 1000
 
-        # Optimization 4: Bajar el intervalo de reintento de 1.0 a 0.2 segundos.
-        # Esto permite que si el primer frame es malo, corrija la identidad rápidamente.
-        self.retry_interval = 0.2
-
     @staticmethod
     def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
         denom = np.linalg.norm(emb1) * np.linalg.norm(emb2)
@@ -48,6 +45,9 @@ class RecognitionEngine:
 
         current_time = time.time()
 
+        # Bandera para limitar el estrés de la CPU. Solo permitimos 1 extracción pesada por frame.
+        extraction_done_this_frame = False
+
         for face in context.faces:
             raw_track_id = getattr(face, "track_id", None)
 
@@ -55,39 +55,60 @@ class RecognitionEngine:
                 continue
 
             track_id: int = int(raw_track_id)
+            needs_extraction = False
+            use_cache = False
 
-            # VALIDACIÓN CACHÉ: Si ya lo conocemos, copiamos los datos e ignoramos a la IA pesada
             if track_id in self.track_cache:
                 cached = self.track_cache[track_id]
+                time_since_validation = current_time - cached.get("last_validation", 0)
 
-                # Optimization 4: If the person is already recognized, use the cache instantly.
                 if cached["identity"] != "Desconocido":
-                    face.identity = cached["identity"]
-                    face.confidence = cached["confidence"]
-                    face.recognition_state = "RECOGNIZED"
-                    continue
+                    # Si es conocido, re-validar cada 3.0 segundos para corregir errores del tracker por oclusión
+                    if time_since_validation > 3.0:
+                        needs_extraction = True
+                    else:
+                        use_cache = True
                 else:
-                    # If the person is "Unknown", check if the cooldown has expired to try again.
-                    time_since_last_attempt = current_time - cached.get(
-                        "last_attempt", 0
-                    )
-                    if time_since_last_attempt < self.retry_interval:
-                        # Cooldown active, keep as unknown for now
-                        face.identity = "Desconocido"
-                        face.confidence = cached["confidence"]
-                        face.recognition_state = "UNKNOWN"
-                        continue
-                    # If cooldown expired, do not continue. Fall through and extract again.
+                    # Si es desconocido, re-validar cada 1.5 segundos
+                    if time_since_validation > 1.5:
+                        needs_extraction = True
+                    else:
+                        use_cache = True
+            else:
+                # Rostro completamente nuevo para el tracker
+                needs_extraction = True
 
-            # Extracción del embedding pesado (ArcFace)
+            # Si necesitamos extraer pero la CPU ya hizo una extracción en este frame,
+            # posponemos la extracción para el siguiente frame y usamos la caché temporalmente.
+            if (
+                needs_extraction
+                and extraction_done_this_frame
+                and track_id in self.track_cache
+            ):
+                needs_extraction = False
+                use_cache = True
+
+            if use_cache and not needs_extraction:
+                face.identity = self.track_cache[track_id]["identity"]
+                face.confidence = self.track_cache[track_id]["confidence"]
+                face.recognition_state = (
+                    "RECOGNIZED" if face.identity != "Desconocido" else "UNKNOWN"
+                )
+                continue
+
+            # ==========================================
+            # EXTRACCIÓN PESADA NEURONAL
+            # ==========================================
             vision_engine.extract_embedding(frame, face)
+            extraction_done_this_frame = (
+                True  # Bloqueamos más extracciones en este frame
+            )
 
             if face.embedding is None:
-                # If extraction fails completely, cache the failure timestamp to respect cooldown
                 self.track_cache[track_id] = {
                     "identity": "Desconocido",
                     "confidence": 0.0,
-                    "last_attempt": current_time,
+                    "last_validation": current_time,
                 }
                 face.identity = "Desconocido"
                 face.confidence = 0.0
@@ -111,14 +132,14 @@ class RecognitionEngine:
             face.confidence = round(best_similarity * 100, 2)
             face.recognition_state = "RECOGNIZED" if is_recognized else "UNKNOWN"
 
-            # GUARDAR EN CACHÉ PARA PRÓXIMOS FRAMES (Actualizando timestamp)
+            # GUARDAR EN CACHÉ (Actualizando timestamp de validación)
             self.track_cache[track_id] = {
                 "identity": face.identity,
                 "confidence": face.confidence,
-                "last_attempt": current_time,
+                "last_validation": current_time,
             }
 
-        # Optimization 3: Memory protection purge to prevent Stuttering and Thermal Throttling.
+        # Purga de memoria para evitar saturación
         if len(self.track_cache) > self.cache_ttl:
             purge_count = len(self.track_cache) - int(self.cache_ttl * 0.8)
             oldest_keys = list(self.track_cache.keys())[:purge_count]
