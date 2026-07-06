@@ -19,7 +19,7 @@ from pathlib import Path
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
 from src.utils.config import (
-    CAMERA_URL,
+    CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
     MODEL_PATH,
     INSIGHTFACE_REC_THRESH,
@@ -47,6 +47,11 @@ class FaceRecognitionGUI:
         self.captured_photos = 0
         self.cooldown_time = 0.0
         self.current_imgtk = None
+
+        # Variables de control de cámaras
+        self.active_camera_idx = 0
+        self.view_mode = "SINGLE"  # "SINGLE" o "GRID"
+        self.streams = []
 
         # Variable para controlar el zoom digital
         self.zoom_factor = tk.DoubleVar(value=1.0)
@@ -119,7 +124,40 @@ class FaceRecognitionGUI:
         )
         self.zoom_slider.pack(fill="x", pady=(0, 20))
 
-        # Botones
+        # --- SECCIÓN DE CÁMARAS (TIPO FNAF) ---
+        lbl_cams = tk.Label(
+            self.control_frame,
+            text="Selector de Cámaras",
+            font=("Helvetica", 10, "bold"),
+            bg="#2C3E50",
+            fg="#BDC3C7",
+        )
+        lbl_cams.pack(pady=(10, 0))
+
+        cam_btn_frame = tk.Frame(self.control_frame, bg="#2C3E50")
+        cam_btn_frame.pack(fill="x", pady=5)
+
+        for i, cam_info in enumerate(CAMERA_SOURCES):
+            btn = tk.Button(
+                cam_btn_frame,
+                text=cam_info["nombre"],
+                bg="#34495E",
+                fg="white",
+                command=lambda idx=i: self.switch_camera(idx),
+            )
+            btn.pack(side="left", expand=True, fill="x", padx=2)
+
+        btn_grid = tk.Button(
+            self.control_frame,
+            text="Vista General (Todas)",
+            bg="#9B59B6",
+            fg="white",
+            command=self.show_grid_view,
+        )
+        btn_grid.pack(fill="x", pady=(0, 15))
+        # --------------------------------------
+
+        # Botones de Acciones Principales
         button_font = ("Helvetica", 12)
 
         self.btn_register = tk.Button(
@@ -166,23 +204,66 @@ class FaceRecognitionGUI:
             threshold=INSIGHTFACE_REC_THRESH,
         )
 
-        print(f"[INFO] Conectando a la cámara: {CAMERA_URL}")
-        self.stream = CameraStream(
-            url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
+        print("[INFO] Conectando a las cámaras...")
+        for cam in CAMERA_SOURCES:
+            stream = CameraStream(
+                source=cam["src"], reconnect_delay=RECONNECT_DELAY_SECONDS
+            )
+            self.streams.append(stream)
+
+    def switch_camera(self, idx):
+        self.active_camera_idx = idx
+        self.view_mode = "SINGLE"
+        if platform.system() == "Windows":
+            winsound.Beep(800, 100)
+
+    def show_grid_view(self):
+        self.view_mode = "GRID"
+        if platform.system() == "Windows":
+            winsound.Beep(850, 100)
+
+    def create_connection_lost_frame(self):
+        w = self.video_label.winfo_width()
+        h = self.video_label.winfo_height()
+        if w < 10 or h < 10:
+            w, h = 640, 480
+        display_frame = np.zeros((h, w, 3), dtype=np.uint8)
+        cv2.putText(
+            display_frame,
+            "CONEXION PERDIDA",
+            (w // 2 - 130, h // 2 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 0, 255),
+            2,
         )
+        cv2.putText(
+            display_frame,
+            "Intentando reconectar automaticamente...",
+            (w // 2 - 210, h // 2 + 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            1,
+        )
+        return display_frame
 
     def update_frame(self):
         if not self.running:
             return
 
-        frame = None
-        try:
-            frame = self.stream.get_frame()
-        except Exception as e:
-            print(f"[WARN] Error temporal obteniendo frame: {e}")
+        display_frame = None
 
-        if getattr(self.stream, "is_connected", True):
-            if frame is not None:
+        if self.view_mode == "SINGLE":
+            stream = self.streams[self.active_camera_idx]
+            frame = None
+            try:
+                frame = stream.get_frame()
+            except Exception:
+                pass
+
+            if getattr(stream, "is_connected", True) and frame is not None:
+                # Zoom Digital
                 z = self.zoom_factor.get()
                 if z > 1.0:
                     h, w = frame.shape[:2]
@@ -208,50 +289,70 @@ class FaceRecognitionGUI:
                         (0, 165, 255),
                         2,
                     )
-
-                rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(rgb_frame)
-
-                label_w = self.video_label.winfo_width()
-                label_h = self.video_label.winfo_height()
-                if label_w > 10 and label_h > 10:
-                    img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
-
-                self.current_imgtk = ImageTk.PhotoImage(image=img)
-                self.video_label.configure(image=self.current_imgtk)
             else:
-                pass
-        else:
-            w = self.video_label.winfo_width()
-            h = self.video_label.winfo_height()
-            if w < 10 or h < 10:
-                w, h = 640, 480
+                display_frame = self.create_connection_lost_frame()
 
-            display_frame = np.zeros((h, w, 3), dtype=np.uint8)
-            text_lost = "CONEXION PERDIDA"
-            text_retry = "Intentando reconectar automaticamente..."
+        elif self.view_mode == "GRID":
+            frames = []
+            target_w, target_h = 320, 240
+            for stream in self.streams:
+                f = None
+                try:
+                    f = stream.get_frame()
+                except Exception:
+                    pass
+
+                if f is not None and getattr(stream, "is_connected", True):
+                    frames.append(cv2.resize(f, (target_w, target_h)))
+                else:
+                    # Crear recuadro negro indicando cámara desconectada en la grilla
+                    blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                    cv2.putText(
+                        blank,
+                        "SIN CONEXION",
+                        (80, target_h // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (0, 0, 255),
+                        2,
+                    )
+                    frames.append(blank)
+
+            # Construir la cuadrícula de forma dinámica (soporta hasta 4 cámaras visualmente)
+            if len(frames) == 1:
+                display_frame = frames[0]
+            elif len(frames) == 2:
+                display_frame = np.hstack((frames[0], frames[1]))
+            elif len(frames) == 3:
+                blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                top = np.hstack((frames[0], frames[1]))
+                bottom = np.hstack((frames[2], blank))
+                display_frame = np.vstack((top, bottom))
+            else:  # 4 o más (muestra las primeras 4)
+                top = np.hstack((frames[0], frames[1]))
+                bottom = np.hstack((frames[2], frames[3]))
+                display_frame = np.vstack((top, bottom))
 
             cv2.putText(
                 display_frame,
-                text_lost,
-                (w // 2 - 130, h // 2 - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 0, 255),
-                2,
-            )
-            cv2.putText(
-                display_frame,
-                text_retry,
-                (w // 2 - 210, h // 2 + 25),
+                "VISTA GENERAL",
+                (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (255, 255, 255),
-                1,
+                (0, 255, 255),
+                2,
             )
 
+        # Volcado a Tkinter
+        if display_frame is not None:
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb_frame)
+
+            label_w = self.video_label.winfo_width()
+            label_h = self.video_label.winfo_height()
+            if label_w > 10 and label_h > 10:
+                img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
+
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
@@ -442,7 +543,6 @@ class FaceRecognitionGUI:
         self.mode = "RECOGNIZE"
         self.update_ui_state("Estado: Reconocimiento Activo", "#2ECC71")
 
-    # AQUÍ ESTÁ LA FUNCIÓN RESTAURADA QUE EVITA LOS ERRORES DE PYLANCE
     def update_ui_state(self, text, color):
         self.lbl_status.config(text=text, fg=color)
 
@@ -451,7 +551,8 @@ class FaceRecognitionGUI:
             "Salir", "¿Estás seguro que deseas cerrar el programa?"
         ):
             self.running = False
-            self.stream.release()
+            for stream in self.streams:
+                stream.release()
             self.root.destroy()
             sys.exit(0)
 

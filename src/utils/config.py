@@ -1,6 +1,9 @@
 # src/utils/config.py
 
-CAMERA_URL = "http://192.168.100.35:8080/video"
+CAMERA_SOURCES = [
+    {"nombre": "Cámara IP", "src": "http://192.168.100.35:8080/video"},
+    {"nombre": "Webcam USB", "src": 0},  # 0 suele ser la cámara conectada por USB
+]
 RECONNECT_DELAY_SECONDS = 2
 DATASET_DIR = "data/dataset"
 MAX_PHOTOS_PER_PERSON = 30
