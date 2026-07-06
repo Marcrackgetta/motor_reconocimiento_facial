@@ -41,11 +41,14 @@ class FaceRecognitionGUI:
 
         # Variables de estado
         self.running = True
-        self.mode = "RECOGNIZE"  # Modos: RECOGNIZE, REGISTER, TRAINING
+        self.mode = "RECOGNIZE"
         self.register_name = ""
         self.captured_photos = 0
         self.cooldown_time = 0.0
-        self.current_imgtk = None  # Almacena la referencia de la imagen para Tkinter
+        self.current_imgtk = None
+
+        # Variable para controlar el zoom digital
+        self.zoom_factor = tk.DoubleVar(value=1.0)
 
         # Configurar la cuadrícula: 70% video (col 0), 30% controles (col 1)
         self.root.columnconfigure(0, weight=7)
@@ -78,7 +81,7 @@ class FaceRecognitionGUI:
             bg="#2C3E50",
             fg="white",
         )
-        lbl_title.pack(pady=(0, 30))
+        lbl_title.pack(pady=(0, 20))
 
         # Indicador de estado actual
         self.lbl_status = tk.Label(
@@ -89,6 +92,32 @@ class FaceRecognitionGUI:
             fg="#2ECC71",
         )
         self.lbl_status.pack(pady=(0, 20))
+
+        # --- SECCIÓN DE ZOOM DIGITAL ---
+        lbl_zoom = tk.Label(
+            self.control_frame,
+            text="Zoom Digital",
+            font=("Helvetica", 10, "bold"),
+            bg="#2C3E50",
+            fg="#BDC3C7",
+        )
+        lbl_zoom.pack(pady=(10, 0))
+
+        self.zoom_slider = tk.Scale(
+            self.control_frame,
+            from_=1.0,
+            to=4.0,
+            resolution=0.1,
+            orient="horizontal",
+            variable=self.zoom_factor,
+            bg="#2C3E50",
+            fg="white",
+            highlightthickness=0,
+            troughcolor="#34495E",
+            activebackground="#3498DB",
+        )
+        self.zoom_slider.pack(fill="x", pady=(0, 20))
+        # -------------------------------
 
         # Botones
         button_font = ("Helvetica", 12)
@@ -149,6 +178,21 @@ class FaceRecognitionGUI:
         frame = self.stream.get_frame()
 
         if frame is not None:
+            # --- LÓGICA DE ZOOM DIGITAL APLICADA AL FOTOGRAMA ---
+            z = self.zoom_factor.get()
+            if z > 1.0:
+                h, w = frame.shape[:2]
+                new_h, new_w = int(h / z), int(w / z)
+
+                # Encontrar el punto de recorte central
+                y1 = (h - new_h) // 2
+                x1 = (w - new_w) // 2
+
+                # Recortar matriz y redimensionar con OpenCV
+                cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
+                frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+            # ----------------------------------------------------
+
             display_frame = frame.copy()
 
             if self.mode == "RECOGNIZE":
@@ -156,7 +200,6 @@ class FaceRecognitionGUI:
             elif self.mode == "REGISTER":
                 display_frame = self.process_registration(frame, display_frame)
             elif self.mode == "TRAINING":
-                # Mostrar overlay de entrenamiento
                 cv2.putText(
                     display_frame,
                     "Entrenando modelo... Por favor espere",
@@ -167,29 +210,22 @@ class FaceRecognitionGUI:
                     2,
                 )
 
-            # Convertir de BGR a RGB para Tkinter
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb_frame)
 
-            # Redimensionar la imagen para que encaje mejor en la UI manteniendo proporción
             label_w = self.video_label.winfo_width()
             label_h = self.video_label.winfo_height()
             if label_w > 10 and label_h > 10:
                 img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
 
-            # Corrección aplicada para Pylance: guardando la referencia de forma segura en la clase
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
-        # Solicitar el siguiente fotograma (~60 FPS máximo)
         self.root.after(16, self.update_frame)
 
     def process_recognition(self, frame, display_frame):
-        # 1. Detección
         context = self.vision_engine.detect(frame)
-        # 2. Tracking
         context = self.tracker.update(context)
-        # 3. Reconocimiento
         context = self.recognition_engine.process(frame, context, self.vision_engine)
 
         for face in context.faces:
@@ -240,7 +276,7 @@ class FaceRecognitionGUI:
             if face_crop.size > 0:
                 gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
                 blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
-                color = (0, 0, 255)  # Rojo indicando desenfoque o espera
+                color = (0, 0, 255)
 
                 if blur_variance >= BLUR_THRESHOLD and (
                     time.time() - self.cooldown_time > 0.4
@@ -252,10 +288,10 @@ class FaceRecognitionGUI:
                     cv2.imwrite(filename, face_crop)
                     self.captured_photos += 1
                     self.cooldown_time = time.time()
-                    color = (0, 255, 0)  # Verde al capturar
+                    color = (0, 255, 0)
 
                     if platform.system() == "Windows":
-                        winsound.Beep(1000, 150)  # Feedback auditivo de captura exitosa
+                        winsound.Beep(1000, 150)
 
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(
@@ -320,7 +356,6 @@ class FaceRecognitionGUI:
         if confirm:
             self.mode = "TRAINING"
             self.update_ui_state("Estado: Entrenando Modelo...", "#F39C12")
-            # Se ejecuta en un hilo separado para evitar que la interfaz visual se congele
             threading.Thread(target=self._train_task, daemon=True).start()
 
     def _train_task(self):
@@ -341,7 +376,6 @@ class FaceRecognitionGUI:
             if len(model_data["encodings"]) > 0:
                 FileManager.save_model(model_data, MODEL_PATH)
 
-                # Actualizar el motor de reconocimiento en memoria sin reiniciar
                 self.recognition_engine.known_encodings = model_data["encodings"]
                 self.recognition_engine.known_names = model_data["names"]
 
@@ -360,7 +394,6 @@ class FaceRecognitionGUI:
                 )
 
         except Exception as e:
-            # Corrección aplicada para Ruff: guardando la variable en el ámbito correcto
             error_msg = str(e)
             self.root.after(
                 0,
@@ -369,7 +402,6 @@ class FaceRecognitionGUI:
                 ),
             )
         finally:
-            # Regresar al modo reconocimiento de forma segura desde el hilo
             self.root.after(0, self._restore_recognition_mode)
 
     def _restore_recognition_mode(self):
