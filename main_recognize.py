@@ -17,7 +17,7 @@ from src.vision.tracker import FaceTracker
 from src.vision.recognition_engine import RecognitionEngine
 
 # Configuración del limitador global de FPS ajustado a 30
-TARGET_FPS = 30
+TARGET_FPS = 120
 FRAME_TIME_LIMIT = 1.0 / TARGET_FPS
 
 

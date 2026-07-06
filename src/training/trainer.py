@@ -21,7 +21,8 @@ class ModelTrainer:
     Entrenador de modelo adaptado al motor de visión asíncrono/diferido.
     """
 
-    def __init__(self):
+    # CORRECCIÓN: Ahora el constructor acepta 'detection_model'
+    def __init__(self, detection_model: str = "hog"):
         self.engine = VisionEngine()
         self.expected_dim = INSIGHTFACE_EMBEDDING_SIZE
         self.known_encodings: List[Any] = []

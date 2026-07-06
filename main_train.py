@@ -24,6 +24,7 @@ def main():
     start_time = time.time()
 
     # 2. Inicializar el módulo de entrenamiento
+    # Se le pasa el argumento; ahora el ModelTrainer lo aceptará correctamente.
     trainer = ModelTrainer(detection_model="hog")
 
     # 3. Procesar imágenes y compilar datos
