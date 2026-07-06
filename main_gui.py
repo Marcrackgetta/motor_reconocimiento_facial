@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 import cv2
+import numpy as np
 from PIL import Image, ImageTk
 
 # Soporte opcional para feedback de audio en Windows
@@ -117,7 +118,6 @@ class FaceRecognitionGUI:
             activebackground="#3498DB",
         )
         self.zoom_slider.pack(fill="x", pady=(0, 20))
-        # -------------------------------
 
         # Botones
         button_font = ("Helvetica", 12)
@@ -175,49 +175,83 @@ class FaceRecognitionGUI:
         if not self.running:
             return
 
-        frame = self.stream.get_frame()
+        frame = None
+        try:
+            frame = self.stream.get_frame()
+        except Exception as e:
+            print(f"[WARN] Error temporal obteniendo frame: {e}")
 
-        if frame is not None:
-            # --- LÓGICA DE ZOOM DIGITAL APLICADA AL FOTOGRAMA ---
-            z = self.zoom_factor.get()
-            if z > 1.0:
-                h, w = frame.shape[:2]
-                new_h, new_w = int(h / z), int(w / z)
+        if getattr(self.stream, "is_connected", True):
+            if frame is not None:
+                z = self.zoom_factor.get()
+                if z > 1.0:
+                    h, w = frame.shape[:2]
+                    new_h, new_w = int(h / z), int(w / z)
+                    y1 = (h - new_h) // 2
+                    x1 = (w - new_w) // 2
+                    cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
+                    frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
-                # Encontrar el punto de recorte central
-                y1 = (h - new_h) // 2
-                x1 = (w - new_w) // 2
+                display_frame = frame.copy()
 
-                # Recortar matriz y redimensionar con OpenCV
-                cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
-                frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
-            # ----------------------------------------------------
+                if self.mode == "RECOGNIZE":
+                    display_frame = self.process_recognition(frame, display_frame)
+                elif self.mode == "REGISTER":
+                    display_frame = self.process_registration(frame, display_frame)
+                elif self.mode == "TRAINING":
+                    cv2.putText(
+                        display_frame,
+                        "Entrenando modelo... Por favor espere",
+                        (50, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 165, 255),
+                        2,
+                    )
 
-            display_frame = frame.copy()
+                rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(rgb_frame)
 
-            if self.mode == "RECOGNIZE":
-                display_frame = self.process_recognition(frame, display_frame)
-            elif self.mode == "REGISTER":
-                display_frame = self.process_registration(frame, display_frame)
-            elif self.mode == "TRAINING":
-                cv2.putText(
-                    display_frame,
-                    "Entrenando modelo... Por favor espere",
-                    (50, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 165, 255),
-                    2,
-                )
+                label_w = self.video_label.winfo_width()
+                label_h = self.video_label.winfo_height()
+                if label_w > 10 and label_h > 10:
+                    img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
+
+                self.current_imgtk = ImageTk.PhotoImage(image=img)
+                self.video_label.configure(image=self.current_imgtk)
+            else:
+                pass
+        else:
+            w = self.video_label.winfo_width()
+            h = self.video_label.winfo_height()
+            if w < 10 or h < 10:
+                w, h = 640, 480
+
+            display_frame = np.zeros((h, w, 3), dtype=np.uint8)
+            text_lost = "CONEXION PERDIDA"
+            text_retry = "Intentando reconectar automaticamente..."
+
+            cv2.putText(
+                display_frame,
+                text_lost,
+                (w // 2 - 130, h // 2 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 0, 255),
+                2,
+            )
+            cv2.putText(
+                display_frame,
+                text_retry,
+                (w // 2 - 210, h // 2 + 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                1,
+            )
 
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb_frame)
-
-            label_w = self.video_label.winfo_width()
-            label_h = self.video_label.winfo_height()
-            if label_w > 10 and label_h > 10:
-                img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
-
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
@@ -408,6 +442,7 @@ class FaceRecognitionGUI:
         self.mode = "RECOGNIZE"
         self.update_ui_state("Estado: Reconocimiento Activo", "#2ECC71")
 
+    # AQUÍ ESTÁ LA FUNCIÓN RESTAURADA QUE EVITA LOS ERRORES DE PYLANCE
     def update_ui_state(self, text, color):
         self.lbl_status.config(text=text, fg=color)
 
