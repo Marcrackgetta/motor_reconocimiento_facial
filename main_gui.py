@@ -198,7 +198,12 @@ class FaceRecognitionGUI:
         known_names = model.get("names", [])
 
         self.vision_engine = VisionEngine()
+
+        # NOTA: Para un traqueo perfecto en modo GRID (múltiples cámaras a la vez),
+        # lo ideal sería tener un FaceTracker independiente por cámara en el futuro.
+        # Por ahora, usamos el tracker global que ya tienes.
         self.tracker = FaceTracker()
+
         self.recognition_engine = RecognitionEngine(
             known_encodings=known_encodings,
             known_names=known_names,
@@ -303,7 +308,25 @@ class FaceRecognitionGUI:
                     pass
 
                 if f is not None and getattr(stream, "is_connected", True):
-                    frames.append(cv2.resize(f, (target_w, target_h)))
+                    # CORRECCIÓN: Copiamos el frame y le aplicamos el procesamiento de visión antes de redimensionarlo
+                    proc_frame = f.copy()
+
+                    if self.mode == "RECOGNIZE":
+                        proc_frame = self.process_recognition(f, proc_frame)
+                    elif self.mode == "REGISTER":
+                        proc_frame = self.process_registration(f, proc_frame)
+                    elif self.mode == "TRAINING":
+                        cv2.putText(
+                            proc_frame,
+                            "Entrenando modelo...",
+                            (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8,
+                            (0, 165, 255),
+                            2,
+                        )
+
+                    frames.append(cv2.resize(proc_frame, (target_w, target_h)))
                 else:
                     blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
                     cv2.putText(
