@@ -5,9 +5,16 @@ CAMERA_SOURCES = [
         "nombre": "Cámara WEB2",
         "src": 0,
         "curso_asignado": "3_Info_",
+        "lat": -2.1484,  # Norte de Guayaquil
+        "lon": -79.9149,
     },
-    {"nombre": "Webcam USB", "src": 2, "curso_asignado": "3_C_A_Mat"},
-    
+    {
+        "nombre": "Webcam USB",
+        "src": 2,
+        "curso_asignado": "3_C_A_Mat",
+        "lat": -2.1894,  # Centro
+        "lon": -79.8891,
+    },
 ]
 RECONNECT_DELAY_SECONDS = 2
 DATASET_DIR = "data/dataset"

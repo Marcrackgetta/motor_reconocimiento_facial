@@ -17,3 +17,5 @@ data/models/*
 # Configuraciones locales de SO
 .DS_Store
 Thumbs.db
+
+credenciales.json
