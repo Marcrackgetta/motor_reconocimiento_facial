@@ -8,7 +8,7 @@ from typing import Optional, Union
 import numpy as np
 
 # Configurar un límite de espera (timeout) corto para FFMPEG (Cámaras IP)
-# Evita que el motor intente conectar eternamente y congele otros procesos
+# Evita que el intento de conexión ahogue los recursos de red
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000"
 
 logging.basicConfig(
@@ -20,7 +20,7 @@ class CameraStream:
     """Clase responsable de gestionar la conexión y extracción asíncrona de video sin bloquear la UI."""
 
     def __init__(self, source: Union[str, int], reconnect_delay: int = 2):
-        # Limpieza de seguridad por si envías un número de cámara como texto (ej. "0")
+        # Limpieza de seguridad por si el número de la cámara USB se pasa como texto
         if isinstance(source, str) and source.isdigit():
             source = int(source)
 
@@ -35,14 +35,12 @@ class CameraStream:
         self.running: bool = True
 
         # AISLAMIENTO DE BACKENDS PARA EVITAR CONFLICTOS
-        # Si es un dispositivo local (int/USB), usamos DirectShow nativo de Windows.
-        # Si es una red (str/IP), usamos FFMPEG.
         if isinstance(self.source, int):
             self.backend = cv2.CAP_DSHOW
         else:
             self.backend = cv2.CAP_FFMPEG
 
-        # Iniciamos el hilo directamente para que la conexión no congele la interfaz
+        # Iniciamos el hilo secundario
         self.thread = threading.Thread(target=self._update, daemon=True)
         self.thread.start()
 
@@ -57,6 +55,11 @@ class CameraStream:
                 else:
                     logging.warning(f"Señal interrumpida en origen: {self.source}")
                     self.is_connected = False
+
+                    # Limpiamos el frame SOLO cuando la cámara falla realmente
+                    with self.frame_lock:
+                        self.latest_frame = None
+
                     if self.cap:
                         self.cap.release()
                         self.cap = None
@@ -68,7 +71,6 @@ class CameraStream:
                         f"Intentando conexión a {self.source} (Backend: {self.backend})..."
                     )
 
-                    # Inicializamos la cámara forzando el motor de video específico
                     self.cap = cv2.VideoCapture(self.source, self.backend)
 
                     if self.cap is not None and self.cap.isOpened():
@@ -83,15 +85,19 @@ class CameraStream:
                             self.cap.release()
                             self.cap = None
 
-                time.sleep(0.1)
+                time.sleep(
+                    0.01
+                )  # Pausa ligera para no sobrecargar el procesador al reconectar
 
     def get_frame(self) -> Optional[np.ndarray]:
-        """Retorna el fotograma más reciente capturado, o None si no hay uno nuevo listo."""
+        """
+        Retorna una copia del fotograma más reciente sin borrarlo del búfer.
+        Esto soluciona el falso negativo asegurando que la interfaz siempre tenga
+        una imagen que dibujar aunque la cámara tarde milisegundos en capturar la siguiente.
+        """
         with self.frame_lock:
             if self.latest_frame is not None:
-                frame = self.latest_frame.copy()
-                self.latest_frame = None
-                return frame
+                return self.latest_frame.copy()
             return None
 
     def release(self) -> None:
