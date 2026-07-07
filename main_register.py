@@ -5,7 +5,7 @@ import sys
 import os
 
 from src.utils.config import (
-    CAMERA_URL,
+    CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
     DATASET_DIR,
     MAX_PHOTOS_PER_PERSON,
@@ -21,24 +21,35 @@ def main():
     print("=" * 50)
 
     person_name = input(
-        "Ingrese el nombre de la persona a registrar (ej. Juan_Perez): "
+        "Ingrese el nombre del cadete a registrar (ej. Juan_Perez): "
     ).strip()
     if not person_name:
         print("[ERROR] El nombre no puede estar vacío.")
         sys.exit(1)
 
+    course_name = input("Ingrese el curso asignado (ej. 2_Informatica_B): ").strip()
+    if not course_name:
+        print("[ERROR] El curso no puede estar vacío.")
+        sys.exit(1)
+
+    # Combinamos el curso y el nombre para crear una etiqueta única
+    identity_label = f"{course_name}_{person_name}"
+
     print("[INFO] Inicializando Motor de Visión (InsightFace)...")
-    # Optimization 5: Replaced broken legacy factory with the unified VisionEngine
     vision_engine = VisionEngine()
 
-    # Create the required dataset directory for the new identity
-    person_dir = os.path.join(DATASET_DIR, person_name)
+    # Creamos el directorio usando la nueva etiqueta combinada
+    person_dir = os.path.join(DATASET_DIR, identity_label)
     os.makedirs(person_dir, exist_ok=True)
 
-    print(f"[INFO] Conectando a la cámara: {CAMERA_URL}")
-    stream = CameraStream(url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS)
+    # Tomamos la primera cámara de tu lista (Cámara IP)
+    # Si deseas usar la Webcam USB, cambia el índice a CAMERA_SOURCES[1]["src"]
+    camera_src = CAMERA_SOURCES[0]["src"]
 
-    # Wait for the camera buffer to initialize
+    print(f"[INFO] Conectando a la cámara: {camera_src}")
+    # Se corrige el uso del parámetro 'source'
+    stream = CameraStream(source=camera_src, reconnect_delay=RECONNECT_DELAY_SECONDS)
+
     time.sleep(2.0)
 
     if not stream.is_connected:
@@ -60,12 +71,8 @@ def main():
                 time.sleep(0.01)
                 continue
 
-            # Optimization 5: Removed useless cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # InsightFace works natively with BGR, converting it to RGB degraded detection.
             display_frame = frame.copy()
 
-            # Accessing the FaceAnalysis instance directly to get bounding boxes
-            # This standardizes the detection pipeline across the entire project
             faces = vision_engine.app.get(frame)
 
             if len(faces) == 1:
@@ -73,7 +80,6 @@ def main():
                 box = face.bbox.astype(int)
                 x1, y1, x2, y2 = box
 
-                # Prevent out-of-bounds array slicing
                 h, w = frame.shape[:2]
                 x1, y1 = max(0, x1), max(0, y1)
                 x2, y2 = min(w, x2), min(h, y2)
@@ -81,29 +87,26 @@ def main():
                 face_crop = frame[y1:y2, x1:x2]
 
                 if face_crop.size > 0:
-                    # Evaluate blur using Laplacian variance
                     gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
                     blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
 
-                    color = (0, 0, 255)  # Red (Blurry or in cooldown state)
+                    color = (0, 0, 255)
 
-                    # Only capture if the image is sharp enough and cooldown has passed
                     if blur_variance >= BLUR_THRESHOLD and (
                         time.time() - cooldown_time > 0.4
                     ):
                         filename = os.path.join(
-                            person_dir, f"{person_name}_{captured_photos:03d}.jpg"
+                            person_dir, f"{identity_label}_{captured_photos:03d}.jpg"
                         )
                         cv2.imwrite(filename, face_crop)
 
                         captured_photos += 1
                         cooldown_time = time.time()
-                        color = (0, 255, 0)  # Green (Successful capture)
+                        color = (0, 255, 0)
                         print(
                             f"[CAPTURA] Foto {captured_photos}/{MAX_PHOTOS_PER_PERSON} guardada. (Nitidez: {blur_variance:.1f})"
                         )
 
-                    # UI Feedback
                     cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(
                         display_frame,
@@ -137,7 +140,7 @@ def main():
         stream.release()
         cv2.destroyAllWindows()
         print(
-            f"[INFO] Proceso finalizado. {captured_photos} fotos registradas para '{person_name}'."
+            f"[INFO] Proceso finalizado. {captured_photos} fotos registradas para '{identity_label}'."
         )
 
 

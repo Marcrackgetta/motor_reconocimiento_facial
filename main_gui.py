@@ -44,6 +44,8 @@ class FaceRecognitionGUI:
         self.running = True
         self.mode = "RECOGNIZE"
         self.register_name = ""
+        self.register_course = ""
+        self.identity_label = ""
         self.captured_photos = 0
         self.cooldown_time = 0.0
         self.current_imgtk = None
@@ -124,7 +126,7 @@ class FaceRecognitionGUI:
         )
         self.zoom_slider.pack(fill="x", pady=(0, 20))
 
-        # --- SECCIÓN DE CÁMARAS (TIPO FNAF) ---
+        # --- SECCIÓN DE CÁMARAS ---
         lbl_cams = tk.Label(
             self.control_frame,
             text="Selector de Cámaras",
@@ -155,7 +157,6 @@ class FaceRecognitionGUI:
             command=self.show_grid_view,
         )
         btn_grid.pack(fill="x", pady=(0, 15))
-        # --------------------------------------
 
         # Botones de Acciones Principales
         button_font = ("Helvetica", 12)
@@ -263,7 +264,6 @@ class FaceRecognitionGUI:
                 pass
 
             if getattr(stream, "is_connected", True) and frame is not None:
-                # Zoom Digital
                 z = self.zoom_factor.get()
                 if z > 1.0:
                     h, w = frame.shape[:2]
@@ -305,7 +305,6 @@ class FaceRecognitionGUI:
                 if f is not None and getattr(stream, "is_connected", True):
                     frames.append(cv2.resize(f, (target_w, target_h)))
                 else:
-                    # Crear recuadro negro indicando cámara desconectada en la grilla
                     blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
                     cv2.putText(
                         blank,
@@ -318,7 +317,6 @@ class FaceRecognitionGUI:
                     )
                     frames.append(blank)
 
-            # Construir la cuadrícula de forma dinámica (soporta hasta 4 cámaras visualmente)
             if len(frames) == 1:
                 display_frame = frames[0]
             elif len(frames) == 2:
@@ -328,7 +326,7 @@ class FaceRecognitionGUI:
                 top = np.hstack((frames[0], frames[1]))
                 bottom = np.hstack((frames[2], blank))
                 display_frame = np.vstack((top, bottom))
-            else:  # 4 o más (muestra las primeras 4)
+            else:
                 top = np.hstack((frames[0], frames[1]))
                 bottom = np.hstack((frames[2], frames[3]))
                 display_frame = np.vstack((top, bottom))
@@ -343,7 +341,6 @@ class FaceRecognitionGUI:
                 2,
             )
 
-        # Volcado a Tkinter
         if display_frame is not None:
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb_frame)
@@ -416,9 +413,10 @@ class FaceRecognitionGUI:
                 if blur_variance >= BLUR_THRESHOLD and (
                     time.time() - self.cooldown_time > 0.4
                 ):
+                    # Guardar con la nueva etiqueta combinada
                     filename = os.path.join(
                         self.person_dir,
-                        f"{self.register_name}_{self.captured_photos:03d}.jpg",
+                        f"{self.identity_label}_{self.captured_photos:03d}.jpg",
                     )
                     cv2.imwrite(filename, face_crop)
                     self.captured_photos += 1
@@ -444,7 +442,7 @@ class FaceRecognitionGUI:
                     winsound.Beep(1500, 400)
                 messagebox.showinfo(
                     "Éxito",
-                    f"Se registraron {MAX_PHOTOS_PER_PERSON} fotos para {self.register_name}.",
+                    f"Se registraron {MAX_PHOTOS_PER_PERSON} fotos para {self.identity_label}.",
                 )
                 self.mode = "RECOGNIZE"
                 self.update_ui_state("Estado: Reconocimiento Activo", "#2ECC71")
@@ -467,18 +465,32 @@ class FaceRecognitionGUI:
             return
 
         name = simpledialog.askstring(
-            "Registrar Nuevo Usuario",
-            "Ingrese el nombre de la persona (ej. Juan_Perez):",
+            "Registro",
+            "Ingrese el nombre del cadete (ej. Juan_Perez):",
             parent=self.root,
         )
-        if name and name.strip():
-            self.register_name = name.strip()
-            self.person_dir = os.path.join(DATASET_DIR, self.register_name)
-            os.makedirs(self.person_dir, exist_ok=True)
-            self.captured_photos = 0
-            self.cooldown_time = time.time()
-            self.mode = "REGISTER"
-            self.update_ui_state("Estado: Capturando Rostro...", "#3498DB")
+        if not name or not name.strip():
+            return
+
+        course = simpledialog.askstring(
+            "Registro", "Ingrese el curso (ej. 2_Informatica_B):", parent=self.root
+        )
+        if not course or not course.strip():
+            return
+
+        self.register_name = name.strip()
+        self.register_course = course.strip()
+
+        # Combinamos curso y nombre para la etiqueta única
+        self.identity_label = f"{self.register_course}_{self.register_name}"
+
+        self.person_dir = os.path.join(DATASET_DIR, self.identity_label)
+        os.makedirs(self.person_dir, exist_ok=True)
+
+        self.captured_photos = 0
+        self.cooldown_time = time.time()
+        self.mode = "REGISTER"
+        self.update_ui_state(f"Estado: Registrando {self.identity_label}...", "#3498DB")
 
     def start_training(self):
         if self.mode == "TRAINING":

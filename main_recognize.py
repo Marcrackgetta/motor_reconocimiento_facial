@@ -6,7 +6,7 @@ import cv2
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
 from src.utils.config import (
-    CAMERA_URL,
+    CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
     MODEL_PATH,
     INSIGHTFACE_REC_THRESH,
@@ -45,7 +45,7 @@ def main():
     fps_history = []  # Historial para estabilizar la lectura de FPS en pantalla
 
     with CameraStream(
-        url=CAMERA_URL, reconnect_delay=RECONNECT_DELAY_SECONDS
+        source=CAMERA_SOURCES[0], reconnect_delay=RECONNECT_DELAY_SECONDS
     ) as stream:
         while True:
             # Inicia el cronómetro del frame actual para el limitador
