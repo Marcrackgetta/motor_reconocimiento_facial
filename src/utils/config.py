@@ -2,7 +2,7 @@
 
 CAMERA_SOURCES = [
     {"nombre": "Cámara IP", "src": "http://192.168.100.35:8080/video"},
-    {"nombre": "Webcam USB", "src": 0},  # 0 suele ser la cámara conectada por USB
+    {"nombre": "Webcam USB", "src": 0},
 ]
 RECONNECT_DELAY_SECONDS = 2
 DATASET_DIR = "data/dataset"
