@@ -44,8 +44,12 @@ def main():
     prev_time = time.perf_counter()
     fps_history = []  # Historial para estabilizar la lectura de FPS en pantalla
 
+    # Extraemos la cámara a usar y su curso asignado
+    camara_activa = CAMERA_SOURCES[0]
+    curso_camara = camara_activa.get("curso_asignado", "")
+
     with CameraStream(
-        source=CAMERA_SOURCES[0], reconnect_delay=RECONNECT_DELAY_SECONDS
+        source=camara_activa, reconnect_delay=RECONNECT_DELAY_SECONDS
     ) as stream:
         while True:
             # Inicia el cronómetro del frame actual para el limitador
@@ -87,23 +91,41 @@ def main():
             )
 
             for face in context.faces:
-                color = (
-                    (0, 255, 0)
-                    if getattr(face, "identity", "") != "Desconocido"
-                    else (0, 0, 255)
-                )
                 confidence = getattr(face, "confidence", 0.0)
                 identity = getattr(face, "identity", "Calculando...")
 
+                # --- Lógica de filtrado por curso ---
+                estado = ""
+
+                if identity == "Desconocido":
+                    color = (0, 0, 255)  # Rojo: Totalmente desconocido
+                elif identity == "Calculando...":
+                    color = (255, 255, 0)  # Cian/Celeste: Procesando
+                else:
+                    # Es un rostro conocido. Verificamos si pertenece a este curso.
+                    if curso_camara in identity:
+                        color = (0, 255, 0)  # Verde: Correcto
+                        estado = " [PRESENTE]"
+
+                        # TODO: A FUTURO - Aquí irá la petición a la Base de Datos.
+                        # Ejemplo: bd.marcar_asistencia(identity, curso_camara, hora)
+
+                    else:
+                        color = (0, 165, 255)  # Naranja: Cadete de otro curso
+                        estado = " [CURSO INCORRECTO]"
+
+                # Dibujar la caja contenedora
                 cv2.rectangle(
                     frame, (face.left, face.top), (face.right, face.bottom), color, 2
                 )
 
+                # Construir la etiqueta final
                 label = (
-                    f"{identity} ({confidence:.1f}%)"
+                    f"{identity}{estado} ({confidence:.1f}%)"
                     if confidence > 0
-                    else f"{identity}"
+                    else f"{identity}{estado}"
                 )
+
                 cv2.putText(
                     frame,
                     label,

@@ -1,8 +1,12 @@
 # src/utils/config.py
 
 CAMERA_SOURCES = [
-    {"nombre": "Cámara IP", "src": "http://192.168.100.35:8080/video"},
-    {"nombre": "Webcam USB", "src": 0},
+    {
+        "nombre": "Cámara IP",
+        "src": "http://192.168.100.35:8080/video",
+        "curso_asignado": "2_Informatica_B_Matutino",
+    },
+    {"nombre": "Webcam USB", "src": 0, "curso_asignado": "3_Ciencias_A_Matutino"},
 ]
 RECONNECT_DELAY_SECONDS = 2
 DATASET_DIR = "data/dataset"
