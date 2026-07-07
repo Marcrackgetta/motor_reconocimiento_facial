@@ -55,8 +55,10 @@ class FaceRecognitionGUI:
         self.view_mode = "SINGLE"  # "SINGLE" o "GRID"
         self.streams = []
 
-        # Variable para controlar el zoom digital
+        # Variables para controlar el zoom y paneo digital
         self.zoom_factor = tk.DoubleVar(value=1.0)
+        self.pan_x = tk.DoubleVar(value=0.0)  # Paneo Horizontal (-1 a 1)
+        self.pan_y = tk.DoubleVar(value=0.0)  # Paneo Vertical (-1 a 1)
 
         # Configurar la cuadrícula: 70% video (col 0), 30% controles (col 1)
         self.root.columnconfigure(0, weight=7)
@@ -124,7 +126,56 @@ class FaceRecognitionGUI:
             troughcolor="#34495E",
             activebackground="#3498DB",
         )
-        self.zoom_slider.pack(fill="x", pady=(0, 20))
+        self.zoom_slider.pack(fill="x", pady=(0, 10))
+
+        # --- SECCIÓN DE PANEO (DESPLAZAMIENTO X e Y) ---
+        lbl_pan_x = tk.Label(
+            self.control_frame,
+            text="Desplazamiento H. (Izquierda - Derecha)",
+            font=("Helvetica", 9, "bold"),
+            bg="#2C3E50",
+            fg="#BDC3C7",
+        )
+        lbl_pan_x.pack(pady=(5, 0))
+
+        self.pan_x_slider = tk.Scale(
+            self.control_frame,
+            from_=-1.0,  # Límite izquierdo
+            to=1.0,  # Límite derecho
+            resolution=0.05,
+            orient="horizontal",
+            variable=self.pan_x,
+            bg="#2C3E50",
+            fg="white",
+            highlightthickness=0,
+            troughcolor="#34495E",
+            activebackground="#3498DB",
+        )
+        self.pan_x_slider.pack(fill="x", pady=(0, 5))
+
+        lbl_pan_y = tk.Label(
+            self.control_frame,
+            text="Desplazamiento V. (Arriba - Abajo)",
+            font=("Helvetica", 9, "bold"),
+            bg="#2C3E50",
+            fg="#BDC3C7",
+        )
+        lbl_pan_y.pack(pady=(5, 0))
+
+        self.pan_y_slider = tk.Scale(
+            self.control_frame,
+            from_=-1.0,  # Límite arriba
+            to=1.0,  # Límite abajo
+            resolution=0.05,
+            orient="horizontal",
+            variable=self.pan_y,
+            bg="#2C3E50",
+            fg="white",
+            highlightthickness=0,
+            troughcolor="#34495E",
+            activebackground="#3498DB",
+        )
+        self.pan_y_slider.pack(fill="x", pady=(0, 20))
 
         # --- SECCIÓN DE CÁMARAS ---
         lbl_cams = tk.Label(
@@ -272,9 +323,27 @@ class FaceRecognitionGUI:
                 z = self.zoom_factor.get()
                 if z > 1.0:
                     h, w = frame.shape[:2]
+
+                    # Tamaño de la nueva ventana "recortada"
                     new_h, new_w = int(h / z), int(w / z)
-                    y1 = (h - new_h) // 2
-                    x1 = (w - new_w) // 2
+
+                    # Espacio máximo que nos sobra para movernos
+                    max_shift_x = w - new_w
+                    max_shift_y = h - new_h
+
+                    # --- LÓGICA DE PANEO DIGITAL (X e Y) ---
+                    pan_val_x = self.pan_x.get()  # Rango de -1.0 a 1.0
+                    pan_val_y = self.pan_y.get()  # Rango de -1.0 a 1.0
+
+                    # Mapeamos el rango [-1.0, 1.0] al espacio disponible
+                    x1 = int(max_shift_x * ((pan_val_x + 1.0) / 2.0))
+                    y1 = int(max_shift_y * ((pan_val_y + 1.0) / 2.0))
+
+                    # Medidas de seguridad para asegurar que no salimos de los límites
+                    x1 = max(0, min(x1, max_shift_x))
+                    y1 = max(0, min(y1, max_shift_y))
+
+                    # Aplicar el recorte y redimensionar
                     cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
                     frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
@@ -308,7 +377,7 @@ class FaceRecognitionGUI:
                     pass
 
                 if f is not None and getattr(stream, "is_connected", True):
-                    # CORRECCIÓN: Copiamos el frame y le aplicamos el procesamiento de visión antes de redimensionarlo
+                    # Copiamos el frame y le aplicamos el procesamiento de visión antes de redimensionarlo
                     proc_frame = f.copy()
 
                     if self.mode == "RECOGNIZE":
