@@ -2,7 +2,7 @@
 
 CAMERA_SOURCES = [
     {
-        "nombre": "Cámara WEB2",
+        "nombre": "Cámara OR",
         "src": 0,
         "curso_asignado": "3_Info_",
         "lat": -2.1484,  # Norte de Guayaquil
@@ -10,7 +10,7 @@ CAMERA_SOURCES = [
     },
     {
         "nombre": "Webcam USB",
-        "src": 2,
+        "src": 1,
         "curso_asignado": "3_C_A_Mat",
         "lat": -2.1894,  # Centro
         "lon": -79.8891,

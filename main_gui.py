@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
-# Soporte opcional para feedback de audio en Windows
 import platform
 
 if platform.system() == "Windows":
@@ -18,7 +17,7 @@ from pathlib import Path
 
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
-from src.storage.firebase_manager import FirebaseManager  # <--- IMPORTACIÓN AÑADIDA
+from src.storage.firebase_manager import FirebaseManager
 from src.utils.config import (
     CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
@@ -41,7 +40,7 @@ class FaceRecognitionGUI:
         self.root.geometry("1100x650")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # Variables de estado
+        # Variables de control operacional
         self.running = True
         self.mode = "RECOGNIZE"
         self.register_name = ""
@@ -51,44 +50,39 @@ class FaceRecognitionGUI:
         self.cooldown_time = 0.0
         self.current_imgtk = None
 
-        # Variables de control de cámaras
         self.active_camera_idx = 0
-        self.view_mode = "SINGLE"  # "SINGLE" o "GRID"
+        self.view_mode = "SINGLE"
         self.streams = []
 
-        # --- NUEVAS VARIABLES FIREBASE ---
+        # --- GESTORES DE BASE DE DATOS Y SEGUIMIENTO HISTÓRICO ---
         self.firebase = FirebaseManager()
-        self.camera_sessions = {}  # Almacenará {idx_stream: {"session_id": ID, "registros_enviados": set(), "contadores": dict}}
+        self.camera_sessions = {}
 
-        # Variables para controlar el zoom y paneo digital
+        # Diccionario estructurado por cámara para no mezclar las detecciones
+        self.active_tracks = {i: {} for i in range(len(CAMERA_SOURCES))}
+
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
         self.pan_y = tk.DoubleVar(value=0.0)
 
-        # Configurar la cuadrícula: 70% video (col 0), 30% controles (col 1)
         self.root.columnconfigure(0, weight=7)
         self.root.columnconfigure(1, weight=3)
         self.root.rowconfigure(0, weight=1)
 
         self.setup_ui()
         self.init_backend()
-
-        # Iniciar bucle de actualización de video
         self.update_frame()
 
     def setup_ui(self):
-        # Panel de Video (Izquierda - 70%)
         self.video_frame = tk.Frame(self.root, bg="black")
         self.video_frame.grid(row=0, column=0, sticky="nsew")
 
         self.video_label = tk.Label(self.video_frame, bg="black")
         self.video_label.pack(expand=True, fill="both")
 
-        # Panel de Controles (Derecha - 30%)
         self.control_frame = tk.Frame(self.root, bg="#2C3E50", padx=20, pady=20)
         self.control_frame.grid(row=0, column=1, sticky="nsew")
 
-        # Título del panel
         lbl_title = tk.Label(
             self.control_frame,
             text="Panel de Control",
@@ -98,7 +92,6 @@ class FaceRecognitionGUI:
         )
         lbl_title.pack(pady=(0, 20))
 
-        # Indicador de estado actual
         self.lbl_status = tk.Label(
             self.control_frame,
             text="Estado: Reconocimiento Activo",
@@ -108,7 +101,6 @@ class FaceRecognitionGUI:
         )
         self.lbl_status.pack(pady=(0, 20))
 
-        # --- SECCIÓN DE ZOOM DIGITAL ---
         lbl_zoom = tk.Label(
             self.control_frame,
             text="Zoom Digital",
@@ -133,10 +125,9 @@ class FaceRecognitionGUI:
         )
         self.zoom_slider.pack(fill="x", pady=(0, 10))
 
-        # --- SECCIÓN DE PANEO (DESPLAZAMIENTO X e Y) ---
         lbl_pan_x = tk.Label(
             self.control_frame,
-            text="Desplazamiento H. (Izquierda - Derecha)",
+            text="Desplazamiento H.",
             font=("Helvetica", 9, "bold"),
             bg="#2C3E50",
             fg="#BDC3C7",
@@ -160,7 +151,7 @@ class FaceRecognitionGUI:
 
         lbl_pan_y = tk.Label(
             self.control_frame,
-            text="Desplazamiento V. (Arriba - Abajo)",
+            text="Desplazamiento V.",
             font=("Helvetica", 9, "bold"),
             bg="#2C3E50",
             fg="#BDC3C7",
@@ -182,7 +173,6 @@ class FaceRecognitionGUI:
         )
         self.pan_y_slider.pack(fill="x", pady=(0, 20))
 
-        # --- SECCIÓN DE CÁMARAS ---
         lbl_cams = tk.Label(
             self.control_frame,
             text="Selector de Cámara/Curso",
@@ -196,7 +186,6 @@ class FaceRecognitionGUI:
             f"{cam.get('nombre', f'Cam {i}')} - {cam.get('curso_asignado', 'General')}"
             for i, cam in enumerate(CAMERA_SOURCES)
         ]
-
         self.cam_var = tk.StringVar()
         self.cam_combo = ttk.Combobox(
             self.control_frame,
@@ -206,10 +195,8 @@ class FaceRecognitionGUI:
             font=("Helvetica", 10),
         )
         self.cam_combo.pack(fill="x", pady=5)
-
         if cam_options:
             self.cam_combo.current(0)
-
         self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
 
         btn_grid = tk.Button(
@@ -221,9 +208,7 @@ class FaceRecognitionGUI:
         )
         btn_grid.pack(fill="x", pady=(0, 15))
 
-        # Botones de Acciones Principales
         button_font = ("Helvetica", 12)
-
         self.btn_register = tk.Button(
             self.control_frame,
             text="Registrar Nuevo Usuario",
@@ -255,13 +240,13 @@ class FaceRecognitionGUI:
         self.btn_quit.pack(fill="x", pady=10, ipady=5)
 
     def init_backend(self):
-        print("[INFO] Cargando modelo y motores de visión...")
+        print("[INFO] Inicializando núcleos y sub-motores de video...")
         model = FileManager.load_model(Path(MODEL_PATH))
         known_encodings = model.get("encodings", [])
         known_names = model.get("names", [])
 
         self.vision_engine = VisionEngine()
-        self.tracker = FaceTracker()
+        self.trackers = [FaceTracker() for _ in CAMERA_SOURCES]
 
         self.recognition_engine = RecognitionEngine(
             known_encodings=known_encodings,
@@ -269,18 +254,15 @@ class FaceRecognitionGUI:
             threshold=INSIGHTFACE_REC_THRESH,
         )
 
-        print("[INFO] Conectando a las cámaras y base de datos...")
         for i, cam in enumerate(CAMERA_SOURCES):
             stream = CameraStream(
                 source=cam["src"], reconnect_delay=RECONNECT_DELAY_SECONDS
             )
             self.streams.append(stream)
 
-            # --- INICIAR SESIÓN EN FIREBASE PARA CADA CÁMARA ---
             session_id = self.firebase.iniciar_sesion_camara(cam)
             self.camera_sessions[i] = {
                 "session_id": session_id,
-                "registros_enviados": set(),
                 "contadores": {"conocidos": 0, "intrusos": 0, "desconocidos": 0},
             }
 
@@ -291,8 +273,7 @@ class FaceRecognitionGUI:
             winsound.Beep(800, 100)
 
     def on_camera_select(self, event):
-        idx = self.cam_combo.current()
-        self.switch_camera(idx)
+        self.switch_camera(self.cam_combo.current())
 
     def show_grid_view(self):
         self.view_mode = "GRID"
@@ -300,10 +281,10 @@ class FaceRecognitionGUI:
             winsound.Beep(850, 100)
 
     def create_connection_lost_frame(self):
-        w = self.video_label.winfo_width()
-        h = self.video_label.winfo_height()
-        if w < 10 or h < 10:
-            w, h = 640, 480
+        w, h = (
+            max(640, self.video_label.winfo_width()),
+            max(480, self.video_label.winfo_height()),
+        )
         display_frame = np.zeros((h, w, 3), dtype=np.uint8)
         cv2.putText(
             display_frame,
@@ -335,24 +316,28 @@ class FaceRecognitionGUI:
                 if z > 1.0:
                     h, w = frame.shape[:2]
                     new_h, new_w = int(h / z), int(w / z)
-
-                    max_shift_x = w - new_w
-                    max_shift_y = h - new_h
-
-                    pan_val_x = self.pan_x.get()
-                    pan_val_y = self.pan_y.get()
-
-                    x1 = int(max_shift_x * ((pan_val_x + 1.0) / 2.0))
-                    y1 = int(max_shift_y * ((pan_val_y + 1.0) / 2.0))
-
-                    x1 = max(0, min(x1, max_shift_x))
-                    y1 = max(0, min(y1, max_shift_y))
-
-                    cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
-                    frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+                    max_shift_x, max_shift_y = w - new_w, h - new_h
+                    x1 = max(
+                        0,
+                        min(
+                            int(max_shift_x * ((self.pan_x.get() + 1.0) / 2.0)),
+                            max_shift_x,
+                        ),
+                    )
+                    y1 = max(
+                        0,
+                        min(
+                            int(max_shift_y * ((self.pan_y.get() + 1.0) / 2.0)),
+                            max_shift_y,
+                        ),
+                    )
+                    frame = cv2.resize(
+                        frame[y1 : y1 + new_h, x1 : x1 + new_w],
+                        (w, h),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
 
                 display_frame = frame.copy()
-
                 if self.mode == "RECOGNIZE":
                     display_frame = self.process_recognition(frame, display_frame)
                 elif self.mode == "REGISTER":
@@ -382,14 +367,12 @@ class FaceRecognitionGUI:
 
                 if f is not None and getattr(stream, "is_connected", True):
                     proc_frame = f.copy()
-
                     if self.mode == "RECOGNIZE":
                         proc_frame = self.process_recognition(
                             f, proc_frame, stream_idx=i
                         )
                     elif self.mode == "REGISTER":
                         proc_frame = self.process_registration(f, proc_frame)
-
                     frames.append(cv2.resize(proc_frame, (target_w, target_h)))
                 else:
                     blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
@@ -410,38 +393,40 @@ class FaceRecognitionGUI:
                 display_frame = np.hstack((frames[0], frames[1]))
             elif len(frames) == 3:
                 blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
-                top = np.hstack((frames[0], frames[1]))
-                bottom = np.hstack((frames[2], blank))
-                display_frame = np.vstack((top, bottom))
+                display_frame = np.vstack(
+                    (np.hstack((frames[0], frames[1])), np.hstack((frames[2], blank)))
+                )
             else:
-                top = np.hstack((frames[0], frames[1]))
-                bottom = np.hstack((frames[2], frames[3]))
-                display_frame = np.vstack((top, bottom))
+                display_frame = np.vstack(
+                    (
+                        np.hstack((frames[0], frames[1])),
+                        np.hstack((frames[2], frames[3])),
+                    )
+                )
 
         if display_frame is not None:
-            rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(rgb_frame)
-
-            label_w = self.video_label.winfo_width()
-            label_h = self.video_label.winfo_height()
-            if label_w > 10 and label_h > 10:
-                img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
-
+            img = Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB))
+            lw, lh = (
+                max(10, self.video_label.winfo_width()),
+                max(10, self.video_label.winfo_height()),
+            )
+            img.thumbnail((lw, lh), Image.Resampling.LANCZOS)
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
         self.root.after(16, self.update_frame)
 
     def process_recognition(self, frame, display_frame, stream_idx=None):
-        context = self.vision_engine.detect(frame)
-        context = self.tracker.update(context)
-        context = self.recognition_engine.process(frame, context, self.vision_engine)
-
         if stream_idx is None:
             stream_idx = self.active_camera_idx
 
-        # Obtener datos de Firebase y de la cámara
-        session_info = self.camera_sessions.get(stream_idx)
+        context = self.vision_engine.detect(frame)
+        context = self.trackers[stream_idx].update(context)
+        context = self.recognition_engine.process(frame, context, self.vision_engine)
+
+        session_info = self.camera_sessions.get(stream_idx, {})
+        session_id = session_info.get("session_id")
+
         try:
             camara_activa = CAMERA_SOURCES[stream_idx]
             curso_actual = camara_activa.get("curso_asignado", "")
@@ -450,12 +435,17 @@ class FaceRecognitionGUI:
             curso_actual = ""
 
         curso_actual_norm = curso_actual.lower().replace("_", " ").strip()
+        current_track_ids = set()
 
         for face in context.faces:
+            track_id = getattr(face, "track_id", None)
+            if track_id is not None:
+                current_track_ids.add(track_id)
+
             confidence = getattr(face, "confidence", 0.0)
             identity = getattr(face, "identity", "Calculando...")
-            estado = ""
-            tipo_registro = ""
+            estado_txt = ""
+            tipo_registro = "DESCONOCIDO"
 
             if identity == "Desconocido":
                 color = (0, 0, 255)
@@ -471,55 +461,54 @@ class FaceRecognitionGUI:
                 else:
                     partes = identity.rsplit("_", 1)
                     if len(partes) == 2:
-                        curso_registrado_norm = (
-                            partes[0].lower().replace("_", " ").strip()
-                        )
-                        if curso_registrado_norm and (
-                            curso_registrado_norm in curso_actual_norm
-                            or curso_actual_norm in curso_registrado_norm
+                        curso_reg_norm = partes[0].lower().replace("_", " ").strip()
+                        if curso_reg_norm and (
+                            curso_reg_norm in curso_actual_norm
+                            or curso_actual_norm in curso_reg_norm
                         ):
                             is_valid = True
 
                 if is_valid:
                     color = (0, 255, 0)
-                    estado = " [PRESENTE]"
+                    estado_txt = " [PRESENTE]"
                     tipo_registro = "PRESENTE"
                 else:
                     color = (0, 165, 255)
-                    estado = " [INTRUSO]"
+                    estado_txt = " [INTRUSO]"
                     tipo_registro = "INTRUSO"
 
-            # --- LÓGICA DE REGISTRO EN FIREBASE (SUBCOLECCIONES) ---
-            if (
-                identity != "Calculando..."
-                and session_info
-                and session_info["session_id"]
-            ):
-                clave_registro = (
-                    getattr(face, "track_id", "DESC")
-                    if identity == "Desconocido"
-                    else identity
-                )
-
-                if clave_registro not in session_info["registros_enviados"]:
-                    session_info["registros_enviados"].add(clave_registro)
-
-                    self.firebase.registrar_deteccion(
-                        session_id=session_info["session_id"],
+            # Validación estricta para Pylance usando variables seguras
+            if identity != "Calculando..." and track_id is not None and session_id:
+                if track_id not in self.active_tracks[stream_idx]:
+                    doc_id = self.firebase.registrar_deteccion(
+                        session_id=session_id,
                         identidad=identity,
                         estado=tipo_registro,
                         confianza=confidence,
                         camara_info=camara_activa,
                     )
 
-                    if tipo_registro == "PRESENTE":
-                        session_info["contadores"]["conocidos"] += 1
-                    elif tipo_registro == "INTRUSO":
-                        session_info["contadores"]["intrusos"] += 1
-                    elif tipo_registro == "DESCONOCIDO":
-                        session_info["contadores"]["desconocidos"] += 1
+                    contadores = session_info.get("contadores")
+                    if contadores:
+                        if tipo_registro == "PRESENTE":
+                            contadores["conocidos"] += 1
+                        elif tipo_registro == "INTRUSO":
+                            contadores["intrusos"] += 1
+                        elif tipo_registro == "DESCONOCIDO":
+                            contadores["desconocidos"] += 1
 
-            # Renderizado visual
+                    self.active_tracks[stream_idx][track_id] = {
+                        "doc_id": doc_id,
+                        "identity": identity,
+                        "tipo": tipo_registro,
+                        "start_time": time.time(),
+                        "last_seen": time.time(),
+                        "missed_frames": 0,
+                    }
+                else:
+                    self.active_tracks[stream_idx][track_id]["missed_frames"] = 0
+                    self.active_tracks[stream_idx][track_id]["last_seen"] = time.time()
+
             cv2.rectangle(
                 display_frame,
                 (face.left, face.top),
@@ -527,11 +516,10 @@ class FaceRecognitionGUI:
                 color,
                 2,
             )
-
             label = (
-                f"{identity}{estado} ({confidence:.1f}%)"
+                f"{identity}{estado_txt} ({confidence:.1f}%)"
                 if confidence > 0
-                else f"{identity}{estado}"
+                else f"{identity}{estado_txt}"
             )
             cv2.putText(
                 display_frame,
@@ -543,39 +531,65 @@ class FaceRecognitionGUI:
                 2,
             )
 
+        expired_track_ids = []
+        for t_id, track_data in self.active_tracks[stream_idx].items():
+            if t_id not in current_track_ids:
+                track_data["missed_frames"] = track_data.get("missed_frames", 0) + 1
+                if track_data["missed_frames"] > 30:
+                    expired_track_ids.append(t_id)
+
+        for t_id in expired_track_ids:
+            track_data = self.active_tracks[stream_idx].pop(t_id)
+            if (
+                track_data.get("tipo") == "INTRUSO"
+                and track_data.get("doc_id")
+                and session_id
+            ):
+                duration = round(
+                    track_data.get("last_seen", time.time())
+                    - track_data.get("start_time", time.time()),
+                    2,
+                )
+                if duration > 0:
+                    self.firebase.actualizar_duracion_intruso(
+                        session_id=session_id,
+                        doc_id=track_data.get("doc_id"),
+                        duracion=duration,
+                    )
+
         return display_frame
 
     def process_registration(self, frame, display_frame):
         faces = self.vision_engine.app.get(frame)
-
         if len(faces) == 1:
-            face = faces[0]
-            box = face.bbox.astype(int)
-            x1, y1, x2, y2 = box
-
-            h, w = frame.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
-
+            box = faces[0].bbox.astype(int)
+            x1, y1, x2, y2 = (
+                max(0, box[0]),
+                max(0, box[1]),
+                min(frame.shape[1], box[2]),
+                min(frame.shape[0], box[3]),
+            )
             face_crop = frame[y1:y2, x1:x2]
 
             if face_crop.size > 0:
-                gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-                blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
+                blur_variance = cv2.Laplacian(
+                    cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY), cv2.CV_64F
+                ).var()
                 color = (0, 0, 255)
 
                 if blur_variance >= BLUR_THRESHOLD and (
                     time.time() - self.cooldown_time > 0.4
                 ):
-                    filename = os.path.join(
-                        self.person_dir,
-                        f"{self.identity_label}_{self.captured_photos:03d}.jpg",
+                    cv2.imwrite(
+                        os.path.join(
+                            self.person_dir,
+                            f"{self.identity_label}_{self.captured_photos:03d}.jpg",
+                        ),
+                        face_crop,
                     )
-                    cv2.imwrite(filename, face_crop)
                     self.captured_photos += 1
                     self.cooldown_time = time.time()
                     color = (0, 255, 0)
-
                     if platform.system() == "Windows":
                         winsound.Beep(1000, 150)
 
@@ -599,7 +613,6 @@ class FaceRecognitionGUI:
                 )
                 self.mode = "RECOGNIZE"
                 self.update_ui_state("Estado: Reconocimiento Activo", "#2ECC71")
-
         elif len(faces) > 1:
             cv2.putText(
                 display_frame,
@@ -610,13 +623,11 @@ class FaceRecognitionGUI:
                 (0, 0, 255),
                 2,
             )
-
         return display_frame
 
     def start_registration(self):
         if self.mode == "TRAINING":
             return
-
         name = simpledialog.askstring(
             "Registro",
             "Ingrese el nombre del cadete (ej. Juan_Perez):",
@@ -624,16 +635,13 @@ class FaceRecognitionGUI:
         )
         if not name or not name.strip():
             return
-
         course = simpledialog.askstring(
             "Registro", "Ingrese el curso (ej. 2_Informatica_B):", parent=self.root
         )
         if not course or not course.strip():
             return
 
-        self.register_name = name.strip()
-        self.register_course = course.strip()
-
+        self.register_name, self.register_course = name.strip(), course.strip()
         self.identity_label = f"{self.register_course}_{self.register_name}"
         self.person_dir = os.path.join(DATASET_DIR, self.identity_label)
         os.makedirs(self.person_dir, exist_ok=True)
@@ -646,12 +654,10 @@ class FaceRecognitionGUI:
     def start_training(self):
         if self.mode == "TRAINING":
             return
-
-        confirm = messagebox.askyesno(
+        if messagebox.askyesno(
             "Confirmar",
             "¿Desea iniciar el entrenamiento con los nuevos usuarios registrados?",
-        )
-        if confirm:
+        ):
             self.mode = "TRAINING"
             self.update_ui_state("Estado: Entrenando Modelo...", "#F39C12")
             threading.Thread(target=self._train_task, daemon=True).start()
@@ -673,10 +679,8 @@ class FaceRecognitionGUI:
 
             if len(model_data["encodings"]) > 0:
                 FileManager.save_model(model_data, MODEL_PATH)
-
                 self.recognition_engine.known_encodings = model_data["encodings"]
                 self.recognition_engine.known_names = model_data["names"]
-
                 self.root.after(
                     0,
                     lambda: messagebox.showinfo(
@@ -690,14 +694,10 @@ class FaceRecognitionGUI:
                         "Error", "No se generaron embeddings."
                     ),
                 )
-
         except Exception as e:
-            error_msg = str(e)
             self.root.after(
                 0,
-                lambda msg=error_msg: messagebox.showerror(
-                    "Error de Entrenamiento", msg
-                ),
+                lambda msg=str(e): messagebox.showerror("Error de Entrenamiento", msg),
             )
         finally:
             self.root.after(0, self._restore_recognition_mode)
@@ -714,21 +714,43 @@ class FaceRecognitionGUI:
             "Salir", "¿Estás seguro que deseas cerrar el programa?"
         ):
             self.running = False
-
-            # Detener cámaras
             for stream in self.streams:
                 stream.release()
 
-            # --- CERRAR SESIONES DE FIREBASE ---
+            print("[INFO] Finalizando registros de permanencia activos de intrusos...")
+            for stream_idx, tracks in self.active_tracks.items():
+                session_info = self.camera_sessions.get(stream_idx, {})
+                session_id = session_info.get("session_id")
+
+                if session_id:
+                    for t_id, track_data in tracks.items():
+                        if track_data.get("tipo") == "INTRUSO" and track_data.get(
+                            "doc_id"
+                        ):
+                            duration = round(
+                                time.time() - track_data.get("start_time", time.time()),
+                                2,
+                            )
+                            self.firebase.actualizar_duracion_intruso(
+                                session_id=session_id,
+                                doc_id=track_data.get("doc_id"),
+                                duracion=duration,
+                            )
+
             print(
                 "[INFO] Subiendo contadores finales a Firebase y cerrando sesiones..."
             )
             for i, session_info in self.camera_sessions.items():
-                if session_info["session_id"]:
-                    self.firebase.cerrar_sesion_camara(
-                        session_id=session_info["session_id"],
-                        conteos=session_info["contadores"],
+                if session_info:
+                    session_id = session_info.get("session_id")
+                    conteos = session_info.get(
+                        "contadores", {"conocidos": 0, "intrusos": 0, "desconocidos": 0}
                     )
+
+                    if session_id:
+                        self.firebase.cerrar_sesion_camara(
+                            session_id=session_id, conteos=conteos
+                        )
 
             self.root.destroy()
             sys.exit(0)

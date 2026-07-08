@@ -18,13 +18,14 @@ class FirebaseManager:
             self.db = None
 
     def iniciar_sesion_camara(self, camara_info):
-        """Crea el documento principal de la cámara y retorna su ID."""
+        """Crea o actualiza el documento usando el nombre del curso como ID de documento."""
         if not self.db:
             return None
 
-        # Obtenemos las coordenadas (si no existen en config.py, usa 0.0 por defecto)
         lat = camara_info.get("lat", 0.0)
         lon = camara_info.get("lon", 0.0)
+        # Limpiamos el nombre del curso para usarlo como identificador único legible en Firestore
+        curso_id = camara_info.get("curso_asignado", "General").strip().replace(" ", "_")
 
         data = {
             "camara_nombre": camara_info.get("nombre", "Camara Desconocida"),
@@ -35,19 +36,19 @@ class FirebaseManager:
             "ubicacion": GeoPoint(lat, lon)
         }
         try:
-            # Crea un documento en la colección principal "SesionesCamara"
-            doc_ref = self.db.collection("SesionesCamara").document()
+            # Seteamos el documento usando curso_id explícito solicitado
+            doc_ref = self.db.collection("SesionesCamara").document(curso_id)
             doc_ref.set(data)
-            logging.info(f"Sesión de cámara iniciada. ID: {doc_ref.id}")
+            logging.info(f"Sesión establecida bajo ID de Curso: {doc_ref.id}")
             return doc_ref.id
         except Exception as e:
-            logging.error(f"Error al iniciar sesión de cámara: {e}")
+            logging.error(f"Error al iniciar sesión de curso con ID estático: {e}")
             return None
 
     def registrar_deteccion(self, session_id, identidad, estado, confianza, camara_info):
-        """Guarda un registro dentro de la subcolección 'Detecciones' de la cámara activa."""
+        """Guarda una detección en la subcolección y devuelve el ID del documento para medir tiempos."""
         if not self.db or not session_id:
-            return
+            return None
 
         ahora = datetime.now()
         data = {
@@ -58,17 +59,32 @@ class FirebaseManager:
             "hora": ahora.strftime("%H:%M:%S"),
             "curso_asignado_camara": camara_info.get("curso_asignado", "General"),
             "timestamp": SERVER_TIMESTAMP,
+            "duracion_permanencia_segundos": 0.0  # Se inicializa por defecto
         }
 
         try:
-            # Crea el documento en la subcolección Detecciones dentro del ID de la sesión
-            self.db.collection("SesionesCamara").document(session_id).collection("Detecciones").add(data)
-            logging.info(f"Registro guardado en subcolección: {identidad} - {estado}")
+            _, doc_ref = self.db.collection("SesionesCamara").document(session_id).collection("Detecciones").add(data)
+            logging.info(f"Entrada registrada en subcolección para: {identidad} ({estado})")
+            return doc_ref.id
         except Exception as e:
-            logging.error(f"Error al guardar detección en subcolección: {e}")
+            logging.error(f"Error al añadir detección a subcolección: {e}")
+            return None
+
+    def actualizar_duracion_intruso(self, session_id, doc_id, duracion):
+        """Añade los segundos de permanencia exactos que el intruso pasó en la zona asignada."""
+        if not self.db or not session_id or not doc_id:
+            return
+
+        try:
+            self.db.collection("SesionesCamara").document(session_id).collection("Detecciones").document(doc_id).update({
+                "duracion_permanencia_segundos": duracion
+            })
+            logging.info(f"Permanencia de intruso finalizada: {duracion}s asignados al registro {doc_id}")
+        except Exception as e:
+            logging.error(f"Error al inyectar tiempo de permanencia: {e}")
 
     def cerrar_sesion_camara(self, session_id, conteos, avg_fps=0.0):
-        """Actualiza el documento principal de la cámara con los totales al cerrarse."""
+        """Cierra el estado maestro del documento del curso e inyecta los balances globales."""
         if not self.db or not session_id:
             return
 
@@ -77,10 +93,9 @@ class FirebaseManager:
                 {
                     "hora_fin": SERVER_TIMESTAMP,
                     "estado": "FINALIZADA",
-                    "conteos": conteos,
-                    "fps_promedio_sesion": round(avg_fps, 2),
+                    "conteos": conteos
                 }
             )
-            logging.info(f"Sesión de cámara {session_id} cerrada y guardada en BD.")
+            logging.info(f"Sesión del curso/cámara [{session_id}] concluida y consolidada.")
         except Exception as e:
-            logging.error(f"Error al cerrar sesión de cámara: {e}")
+            logging.error(f"Error al cerrar canal de curso: {e}")
