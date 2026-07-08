@@ -54,16 +54,13 @@ class FaceRecognitionGUI:
         self.view_mode = "SINGLE"
         self.streams = []
 
-        # --- CONFIGURACIÓN DE COOLDOWN PARA BASE DE DATOS ---
         # 600 segundos = 10 minutos. (Si deseas 1 hora, cámbialo a 3600)
         self.cooldown_seconds = 600
 
         self.firebase = FirebaseManager()
         self.camera_sessions = {}
 
-        # Capa 1: Memoria de Tracking (Física)
         self.active_tracks = {i: {} for i in range(len(CAMERA_SOURCES))}
-        # Capa 2: Memoria de Identidades (Tiempo de gracia para no repetir DB)
         self.db_cooldowns = {i: {} for i in range(len(CAMERA_SOURCES))}
 
         self.zoom_factor = tk.DoubleVar(value=1.0)
@@ -252,7 +249,6 @@ class FaceRecognitionGUI:
 
         self.vision_engine = VisionEngine()
         self.trackers = [FaceTracker() for _ in CAMERA_SOURCES]
-
         self.recognition_engine = RecognitionEngine(
             known_encodings=known_encodings,
             known_names=known_names,
@@ -264,7 +260,6 @@ class FaceRecognitionGUI:
                 source=cam["src"], reconnect_delay=RECONNECT_DELAY_SECONDS
             )
             self.streams.append(stream)
-
             session_id = self.firebase.iniciar_sesion_camara(cam)
             self.camera_sessions[i] = {
                 "session_id": session_id,
@@ -482,38 +477,50 @@ class FaceRecognitionGUI:
                     estado_txt = " [INTRUSO]"
                     tipo_registro = "INTRUSO"
 
-            # --- LÓGICA REFINADA CON COOLDOWN POR IDENTIDAD ---
+            # --- NUEVA LÓGICA DE REGISTRO E IDENTIFICADORES ---
             if identity != "Calculando..." and session_id:
-                # Definimos una llave única para el enfriamiento. Los desconocidos se agrupan por su ID de tracker.
                 cooldown_key = (
                     identity if identity != "Desconocido" else f"DESC_{track_id}"
                 )
 
                 if track_id not in self.active_tracks[stream_idx]:
-                    # ES UN ROSTRO FÍSICAMENTE NUEVO EN LA CÁMARA
                     last_db_time = self.db_cooldowns[stream_idx].get(cooldown_key, 0)
                     doc_id = None
 
-                    # ¿Han pasado más de los 10 minutos desde la última vez que lo subimos a Firebase?
-                    if time.time() - last_db_time > self.cooldown_seconds:
-                        # SÍ, PERMITIR ESCRITURA EN BD
-                        doc_id = self.firebase.registrar_deteccion(
-                            session_id=session_id,
-                            identidad=identity,
-                            estado=tipo_registro,
-                            confianza=confidence,
-                            camara_info=camara_activa,
-                        )
+                    if tipo_registro == "DESCONOCIDO":
+                        # LOS DESCONOCIDOS SOLO SUMAN AL CONTADOR PRINCIPAL
                         contadores = session_info.get("contadores")
                         if contadores:
-                            if tipo_registro == "PRESENTE":
-                                contadores["conocidos"] += 1
-                            elif tipo_registro == "INTRUSO":
-                                contadores["intrusos"] += 1
-                            elif tipo_registro == "DESCONOCIDO":
-                                contadores["desconocidos"] += 1
+                            contadores["desconocidos"] += 1
+                            self.firebase.actualizar_contadores(session_id, contadores)
+                    else:
+                        # PRESENTES E INTRUSOS
+                        if time.time() - last_db_time > self.cooldown_seconds:
+                            # Generación del ID personalizado
+                            custom_id = (
+                                f"INTRUSO_{identity}"
+                                if tipo_registro == "INTRUSO"
+                                else identity
+                            )
 
-                    # Registrar la persona en la memoria de rastreo a corto plazo
+                            doc_id = self.firebase.registrar_deteccion(
+                                session_id=session_id,
+                                identidad=identity,
+                                estado=tipo_registro,
+                                confianza=confidence,
+                                camara_info=camara_activa,
+                                custom_doc_id=custom_id,
+                            )
+                            contadores = session_info.get("contadores")
+                            if contadores:
+                                if tipo_registro == "PRESENTE":
+                                    contadores["conocidos"] += 1
+                                elif tipo_registro == "INTRUSO":
+                                    contadores["intrusos"] += 1
+                                self.firebase.actualizar_contadores(
+                                    session_id, contadores
+                                )
+
                     self.active_tracks[stream_idx][track_id] = {
                         "doc_id": doc_id,
                         "cooldown_key": cooldown_key,
@@ -523,16 +530,14 @@ class FaceRecognitionGUI:
                         "missed_frames": 0,
                         "best_identity": identity,
                     }
-                    # Actualizar el reloj de cooldown
                     self.db_cooldowns[stream_idx][cooldown_key] = time.time()
 
                 else:
-                    # LA PERSONA YA ESTÁ EN CÁMARA (Actualizar estado físico)
+                    # SI YA ESTÁ EN CÁMARA
                     track_data = self.active_tracks[stream_idx][track_id]
                     track_data["missed_frames"] = 0
                     track_data["last_seen"] = time.time()
 
-                    # Corrección si primero fue "Desconocido" y luego en otro frame el modelo sí lo reconoció
                     if (
                         track_data["best_identity"] == "Desconocido"
                         and identity != "Desconocido"
@@ -543,25 +548,32 @@ class FaceRecognitionGUI:
 
                         last_db_time = self.db_cooldowns[stream_idx].get(identity, 0)
                         if time.time() - last_db_time > self.cooldown_seconds:
+                            custom_id = (
+                                f"INTRUSO_{identity}"
+                                if tipo_registro == "INTRUSO"
+                                else identity
+                            )
+
                             doc_id = self.firebase.registrar_deteccion(
                                 session_id=session_id,
                                 identidad=identity,
                                 estado=tipo_registro,
                                 confianza=confidence,
                                 camara_info=camara_activa,
+                                custom_doc_id=custom_id,
                             )
                             track_data["doc_id"] = doc_id
+
                             contadores = session_info.get("contadores")
                             if contadores:
                                 if tipo_registro == "PRESENTE":
                                     contadores["conocidos"] += 1
                                 elif tipo_registro == "INTRUSO":
                                     contadores["intrusos"] += 1
-                                elif tipo_registro == "DESCONOCIDO":
-                                    contadores["desconocidos"] += 1
+                                self.firebase.actualizar_contadores(
+                                    session_id, contadores
+                                )
 
-                    # RENOVAMOS EL COOLDOWN MIENTRAS SIGA EN CÁMARA.
-                    # Esto asegura que los 10 minutos se cuentan a partir de que la persona SALE de escena.
                     self.db_cooldowns[stream_idx][track_data["cooldown_key"]] = (
                         time.time()
                     )
