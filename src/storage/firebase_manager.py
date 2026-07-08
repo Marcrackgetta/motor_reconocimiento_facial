@@ -45,66 +45,155 @@ class FirebaseManager:
             logging.error(f"Error al iniciar sesión de curso con ID estático: {e}")
             return None
 
+    def _es_del_curso(self, identity, curso_actual):
+        """Valida si un cadete pertenece al curso de la cámara activa"""
+        curso_actual_norm = curso_actual.lower().replace("_", " ").strip()
+        ident_norm = identity.lower().replace("_", " ").strip()
+
+        if curso_actual_norm == "" or curso_actual_norm in ident_norm:
+            return True
+
+        partes = identity.rsplit("_", 1)
+        if len(partes) == 2:
+            curso_reg_norm = partes[0].lower().replace("_", " ").strip()
+            if curso_reg_norm and (
+                curso_reg_norm in curso_actual_norm
+                or curso_actual_norm in curso_reg_norm
+            ):
+                return True
+        return False
+
     def registrar_deteccion(
-        self, session_id, identidad, estado, confianza, camara_info, custom_doc_id=None
+        self,
+        session_id,
+        identidad,
+        estado,
+        confianza,
+        camara_info,
+        custom_doc_id=None,
+        known_names=None,
     ):
         if not self.db or not session_id:
             return None
 
-        ahora = datetime.now()
-        data = {
-            "identidad": identidad,
-            "estado": estado,
-            "confianza": confianza,
-            "fecha": ahora.strftime("%Y-%m-%d"),
-            "hora": ahora.strftime("%H:%M:%S"),
-            "curso_asignado_camara": camara_info.get("curso_asignado", "General"),
-            "timestamp": SERVER_TIMESTAMP,
-            "duracion_permanencia_segundos": 0.0,
-        }
+        # El ID del documento será exclusivamente la fecha
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        doc_ref = (
+            self.db.collection("SesionesCamara")
+            .document(session_id)
+            .collection("RegistroDiario")
+            .document(fecha_hoy)
+        )
 
         try:
-            if custom_doc_id:
-                # Limpiamos el ID por si tiene caracteres que a Firebase no le gustan
-                safe_doc_id = custom_doc_id.replace("/", "_").replace(" ", "_")
-                doc_ref = (
-                    self.db.collection("SesionesCamara")
-                    .document(session_id)
-                    .collection("Detecciones")
-                    .document(safe_doc_id)
+            doc = doc_ref.get()
+            curso_actual = camara_info.get("curso_asignado", "General")
+
+            if doc.exists:
+                data = doc.to_dict()
+            else:
+                # Inicializar documento. Se calculan los ausentes restando de todos los registrados.
+                alumnos_esperados = []
+                if known_names:
+                    for name in known_names:
+                        if name != "Desconocido" and self._es_del_curso(
+                            name, curso_actual
+                        ):
+                            alumnos_esperados.append(name)
+
+                data = {
+                    "fecha": fecha_hoy,
+                    "curso_asignado_camara": curso_actual,
+                    "total_presentes": 0,
+                    "lista_presentes": [],
+                    "total_ausentes": len(alumnos_esperados),
+                    "lista_ausentes": alumnos_esperados,
+                    "total_intrusos": 0,
+                    "lista_intrusos": [],
+                }
+
+            actualizado = False
+
+            if estado == "PRESENTE":
+                if identidad not in data["lista_presentes"]:
+                    data["lista_presentes"].append(identidad)
+                    data["total_presentes"] = len(data["lista_presentes"])
+                    actualizado = True
+
+                # Si llegó, ya no está ausente
+                if identidad in data["lista_ausentes"]:
+                    data["lista_ausentes"].remove(identidad)
+                    data["total_ausentes"] = len(data["lista_ausentes"])
+                    actualizado = True
+
+            elif estado == "INTRUSO":
+                # Extraer el curso del intruso asumiendo el formato Curso_Nombre
+                partes = identidad.rsplit("_", 1)
+                curso_origen = partes[0] if len(partes) == 2 else "Desconocido"
+                nombre_intruso = partes[1] if len(partes) == 2 else identidad
+
+                ya_registrado = any(
+                    i.get("identidad") == identidad for i in data["lista_intrusos"]
                 )
+                if not ya_registrado:
+                    intruso_info = {
+                        "identidad": identidad,
+                        "nombre": nombre_intruso,
+                        "curso_esperado": curso_origen,
+                        "hora_primera_deteccion": datetime.now().strftime("%H:%M:%S"),
+                        "duracion_segundos": 0.0,
+                    }
+                    data["lista_intrusos"].append(intruso_info)
+                    data["total_intrusos"] = len(data["lista_intrusos"])
+                    actualizado = True
+
+            if actualizado or not doc.exists:
                 doc_ref.set(data)
                 logging.info(
-                    f"Registro en subcolección con ID [{safe_doc_id}] guardado exitosamente."
+                    f"Registro diario [{fecha_hoy}] actualizado para identidad: {identidad}"
                 )
-                return safe_doc_id
-            else:
-                _, doc_ref = (
-                    self.db.collection("SesionesCamara")
-                    .document(session_id)
-                    .collection("Detecciones")
-                    .add(data)
-                )
-                return doc_ref.id
+
+            return fecha_hoy  # Retornamos la fecha para usarla como doc_id al actualizar la duración
+
         except Exception as e:
-            logging.error(f"Error al añadir detección a subcolección: {e}")
+            logging.error(f"Error al actualizar asistencia diaria: {e}")
             return None
 
-    def actualizar_duracion_intruso(self, session_id, doc_id, duracion):
-        if not self.db or not session_id or not doc_id:
+    def actualizar_duracion_intruso(self, session_id, doc_id, duracion, identidad=None):
+        if not self.db or not session_id or not doc_id or not identidad:
             return
         try:
-            self.db.collection("SesionesCamara").document(session_id).collection(
-                "Detecciones"
-            ).document(doc_id).update({"duracion_permanencia_segundos": duracion})
-            logging.info(
-                f"Permanencia de intruso finalizada: {duracion}s asignados al registro {doc_id}"
+            # doc_id en este contexto corresponde a la fecha ("YYYY-MM-DD")
+            doc_ref = (
+                self.db.collection("SesionesCamara")
+                .document(session_id)
+                .collection("RegistroDiario")
+                .document(doc_id)
             )
+            doc = doc_ref.get()
+
+            if doc.exists:
+                data = doc.to_dict()
+                intrusos = data.get("lista_intrusos", [])
+                modificado = False
+
+                # Buscar al intruso en la lista y actualizar su duración
+                for idx, intruso in enumerate(intrusos):
+                    if intruso.get("identidad") == identidad:
+                        duracion_actual = intruso.get("duracion_segundos", 0.0)
+                        intrusos[idx]["duracion_segundos"] = duracion_actual + duracion
+                        modificado = True
+                        break
+
+                if modificado:
+                    doc_ref.update({"lista_intrusos": intrusos})
+                    logging.info(
+                        f"Permanencia de intruso consolidada: {duracion}s sumados a {identidad}."
+                    )
         except Exception as e:
             logging.error(f"Error al inyectar tiempo de permanencia: {e}")
 
     def actualizar_contadores(self, session_id, conteos):
-        """Sube el total del contador a la base de datos en tiempo real (ideal para los desconocidos)."""
         if not self.db or not session_id:
             return
         try:

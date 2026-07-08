@@ -510,6 +510,7 @@ class FaceRecognitionGUI:
                                 confianza=confidence,
                                 camara_info=camara_activa,
                                 custom_doc_id=custom_id,
+                                known_names=self.recognition_engine.known_names,  # AÑADIDO AQUÍ
                             )
                             contadores = session_info.get("contadores")
                             if contadores:
@@ -561,6 +562,7 @@ class FaceRecognitionGUI:
                                 confianza=confidence,
                                 camara_info=camara_activa,
                                 custom_doc_id=custom_id,
+                                known_names=self.recognition_engine.known_names,  # AÑADIDO AQUÍ
                             )
                             track_data["doc_id"] = doc_id
 
@@ -626,6 +628,7 @@ class FaceRecognitionGUI:
                         session_id=session_id,
                         doc_id=track_data.get("doc_id"),
                         duracion=duration,
+                        identidad=track_data.get("best_identity"),  # AÑADIDO AQUÍ
                     )
 
         return display_frame
@@ -806,6 +809,9 @@ class FaceRecognitionGUI:
                                 session_id=session_id,
                                 doc_id=track_data.get("doc_id"),
                                 duracion=duration,
+                                identidad=track_data.get(
+                                    "best_identity"
+                                ),  # AÑADIDO AQUÍ
                             )
 
             print(

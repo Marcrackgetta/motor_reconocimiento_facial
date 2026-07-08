@@ -2,6 +2,7 @@ import time
 import logging
 from pathlib import Path
 from typing import Dict, List, Any
+import numpy as np  # <-- NUEVO: Importación necesaria para promediar
 
 import cv2
 
@@ -21,7 +22,6 @@ class ModelTrainer:
     Entrenador de modelo adaptado al motor de visión asíncrono/diferido.
     """
 
-    # CORRECCIÓN: Ahora el constructor acepta 'detection_model'
     def __init__(self, detection_model: str = "hog"):
         self.engine = VisionEngine()
         self.expected_dim = INSIGHTFACE_EMBEDDING_SIZE
@@ -56,6 +56,7 @@ class ModelTrainer:
 
             ok = 0
             fail = 0
+            person_embeddings = []  # <-- NUEVO: Lista temporal para las fotos de esta persona
 
             for img_path in images:
                 try:
@@ -90,17 +91,25 @@ class ModelTrainer:
                         fail += 1
                         continue
 
-                    self.known_encodings.append(encoding)
-                    self.known_names.append(person_name)
-
+                    # Guardar el encoding en la lista temporal en vez de la lista final
+                    person_embeddings.append(encoding)
                     ok += 1
 
                 except Exception as e:
                     logger.error(f"Error en {img_path}: {e}")
                     fail += 1
 
-                total_ok += ok
-                total_fail += fail
+            # --- NUEVA LÓGICA: CONSOLIDAR AL USUARIO EN UN SOLO PERFIL ---
+            if person_embeddings:
+                # Calcula el vector promedio de todas las fotos válidas (las 30 capturas)
+                avg_embedding = np.mean(person_embeddings, axis=0)
+
+                # Guarda un único registro para el modelo
+                self.known_encodings.append(avg_embedding)
+                self.known_names.append(person_name)
+
+            total_ok += ok
+            total_fail += fail
 
             print(f"  -> OK: {ok} | FAIL: {fail}")
 
@@ -110,8 +119,11 @@ class ModelTrainer:
         print(" RESUMEN ENTRENAMIENTO ".center(50, "="))
         print("=" * 50)
         print(f"Personas: {len(person_directories)}")
-        print(f"Imágenes OK: {total_ok}")
+        print(f"Imágenes analizadas OK: {total_ok}")
         print(f"Imágenes FAIL: {total_fail}")
+        print(
+            f"Usuarios únicos registrados en modelo: {len(self.known_names)}"
+        )  # Indicador extra
         print(f"Tiempo: {elapsed:.2f}s")
         print("=" * 50)
 

@@ -2,18 +2,25 @@
 
 CAMERA_SOURCES = [
     {
-        "nombre": "Cámara OR",
+        "nombre": "Cámara LP",
         "src": 0,
-        "curso_asignado": "3_Info_",
-        "lat": -2.1484,  # Norte de Guayaquil
-        "lon": -79.9149,
+        "curso_asignado": "3_Info_B",
+        "lat": -2.128589,
+        "lon": -79.931099,
     },
     {
-        "nombre": "Webcam USB",
+        "nombre": "Webcam USB1",
         "src": 1,
-        "curso_asignado": "3_C_A_Mat",
-        "lat": -2.1894,  # Centro
-        "lon": -79.8891,
+        "curso_asignado": "3_CN_A_Mat",
+        "lat": -2.129581,
+        "lon": -79.931084,
+    },
+    {
+        "nombre": "Webcam USB2",
+        "src": 3,
+        "curso_asignado": "3_CT_A_Mat",
+        "lat": -2.128720,
+        "lon": -79.931061,
     },
 ]
 RECONNECT_DELAY_SECONDS = 2
