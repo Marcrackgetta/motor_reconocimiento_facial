@@ -261,13 +261,9 @@ class FaceRecognitionGUI:
             )
             self.streams.append(stream)
 
-            # Pasamos known_names al iniciar la sesión para calcular los ausentes base
-            session_id = self.firebase.iniciar_sesion_camara(
-                cam, known_names=known_names
-            )
-            self.camera_sessions[i] = {
-                "session_id": session_id,
-            }
+            # NO iniciamos la sesión aquí. Solo preparamos el diccionario
+            # Guardamos 'cam_info' para registrar la cámara más tarde cuando dé video.
+            self.camera_sessions[i] = {"session_id": None, "cam_info": cam}
 
     def switch_camera(self, idx):
         self.active_camera_idx = idx
@@ -303,6 +299,23 @@ class FaceRecognitionGUI:
     def update_frame(self):
         if not self.running:
             return
+
+        for i, stream in enumerate(self.streams):
+            # Si el stream tiene conexión pero la sesión en Firebase aún no se ha creado
+            if (
+                getattr(stream, "is_connected", False)
+                and self.camera_sessions[i].get("session_id") is None
+            ):
+                # Confirmar que realmente ya llegó un fotograma
+                if stream.get_frame() is not None:
+                    print(
+                        f"[INFO] Video detectado en la cámara {i}. Iniciando sesión en Firebase..."
+                    )
+                    session_id = self.firebase.iniciar_sesion_camara(
+                        self.camera_sessions[i]["cam_info"],
+                        known_names=self.recognition_engine.known_names,
+                    )
+                    self.camera_sessions[i]["session_id"] = session_id
 
         display_frame = None
 
