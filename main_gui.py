@@ -54,7 +54,7 @@ class FaceRecognitionGUI:
         self.view_mode = "SINGLE"
         self.streams = []
 
-        # 600 segundos = 10 minutos. (Si deseas 1 hora, cámbialo a 3600)
+        # Cooldown para registros redundantes en base de datos (10 minutos)
         self.cooldown_seconds = 600
 
         self.firebase = FirebaseManager()
@@ -260,10 +260,13 @@ class FaceRecognitionGUI:
                 source=cam["src"], reconnect_delay=RECONNECT_DELAY_SECONDS
             )
             self.streams.append(stream)
-            session_id = self.firebase.iniciar_sesion_camara(cam)
+
+            # Pasamos known_names al iniciar la sesión para calcular los ausentes base
+            session_id = self.firebase.iniciar_sesion_camara(
+                cam, known_names=known_names
+            )
             self.camera_sessions[i] = {
                 "session_id": session_id,
-                "contadores": {"conocidos": 0, "intrusos": 0, "desconocidos": 0},
             }
 
     def switch_camera(self, idx):
@@ -477,7 +480,7 @@ class FaceRecognitionGUI:
                     estado_txt = " [INTRUSO]"
                     tipo_registro = "INTRUSO"
 
-            # --- NUEVA LÓGICA DE REGISTRO E IDENTIFICADORES ---
+            # Transacciones dinámicas hacia la subcolección unificada
             if identity != "Calculando..." and session_id:
                 cooldown_key = (
                     identity if identity != "Desconocido" else f"DESC_{track_id}"
@@ -487,40 +490,23 @@ class FaceRecognitionGUI:
                     last_db_time = self.db_cooldowns[stream_idx].get(cooldown_key, 0)
                     doc_id = None
 
-                    if tipo_registro == "DESCONOCIDO":
-                        # LOS DESCONOCIDOS SOLO SUMAN AL CONTADOR PRINCIPAL
-                        contadores = session_info.get("contadores")
-                        if contadores:
-                            contadores["desconocidos"] += 1
-                            self.firebase.actualizar_contadores(session_id, contadores)
-                    else:
-                        # PRESENTES E INTRUSOS
-                        if time.time() - last_db_time > self.cooldown_seconds:
-                            # Generación del ID personalizado
-                            custom_id = (
-                                f"INTRUSO_{identity}"
-                                if tipo_registro == "INTRUSO"
-                                else identity
-                            )
+                    if time.time() - last_db_time > self.cooldown_seconds:
+                        custom_id = (
+                            f"INTRUSO_{identity}"
+                            if tipo_registro == "INTRUSO"
+                            else identity
+                        )
 
-                            doc_id = self.firebase.registrar_deteccion(
-                                session_id=session_id,
-                                identidad=identity,
-                                estado=tipo_registro,
-                                confianza=confidence,
-                                camara_info=camara_activa,
-                                custom_doc_id=custom_id,
-                                known_names=self.recognition_engine.known_names,  # AÑADIDO AQUÍ
-                            )
-                            contadores = session_info.get("contadores")
-                            if contadores:
-                                if tipo_registro == "PRESENTE":
-                                    contadores["conocidos"] += 1
-                                elif tipo_registro == "INTRUSO":
-                                    contadores["intrusos"] += 1
-                                self.firebase.actualizar_contadores(
-                                    session_id, contadores
-                                )
+                        # Mapea y actualiza directamente la subcolección usando el nuevo ID compuesto
+                        doc_id = self.firebase.registrar_deteccion(
+                            session_id=session_id,
+                            identidad=identity,
+                            estado=tipo_registro,
+                            confianza=confidence,
+                            camara_info=camara_activa,
+                            custom_doc_id=custom_id,
+                            known_names=self.recognition_engine.known_names,
+                        )
 
                     self.active_tracks[stream_idx][track_id] = {
                         "doc_id": doc_id,
@@ -534,7 +520,6 @@ class FaceRecognitionGUI:
                     self.db_cooldowns[stream_idx][cooldown_key] = time.time()
 
                 else:
-                    # SI YA ESTÁ EN CÁMARA
                     track_data = self.active_tracks[stream_idx][track_id]
                     track_data["missed_frames"] = 0
                     track_data["last_seen"] = time.time()
@@ -562,25 +547,15 @@ class FaceRecognitionGUI:
                                 confianza=confidence,
                                 camara_info=camara_activa,
                                 custom_doc_id=custom_id,
-                                known_names=self.recognition_engine.known_names,  # AÑADIDO AQUÍ
+                                known_names=self.recognition_engine.known_names,
                             )
                             track_data["doc_id"] = doc_id
-
-                            contadores = session_info.get("contadores")
-                            if contadores:
-                                if tipo_registro == "PRESENTE":
-                                    contadores["conocidos"] += 1
-                                elif tipo_registro == "INTRUSO":
-                                    contadores["intrusos"] += 1
-                                self.firebase.actualizar_contadores(
-                                    session_id, contadores
-                                )
 
                     self.db_cooldowns[stream_idx][track_data["cooldown_key"]] = (
                         time.time()
                     )
 
-            # Renderizado visual
+            # Renderizado visual en pantalla
             cv2.rectangle(
                 display_frame,
                 (face.left, face.top),
@@ -603,7 +578,7 @@ class FaceRecognitionGUI:
                 2,
             )
 
-        # Evaluar salidas de escena
+        # Evaluar salidas de escena para cerrar métricas de permanencia
         expired_track_ids = []
         for t_id, track_data in self.active_tracks[stream_idx].items():
             if t_id not in current_track_ids:
@@ -628,7 +603,7 @@ class FaceRecognitionGUI:
                         session_id=session_id,
                         doc_id=track_data.get("doc_id"),
                         duracion=duration,
-                        identidad=track_data.get("best_identity"),  # AÑADIDO AQUÍ
+                        identidad=track_data.get("best_identity"),
                     )
 
         return display_frame
@@ -809,25 +784,17 @@ class FaceRecognitionGUI:
                                 session_id=session_id,
                                 doc_id=track_data.get("doc_id"),
                                 duracion=duration,
-                                identidad=track_data.get(
-                                    "best_identity"
-                                ),  # AÑADIDO AQUÍ
+                                identidad=track_data.get("best_identity"),
                             )
 
             print(
-                "[INFO] Subiendo contadores finales a Firebase y cerrando sesiones..."
+                "[INFO] Inyectando hora de fin en subcolecciones y cerrando canales..."
             )
             for i, session_info in self.camera_sessions.items():
                 if session_info:
                     session_id = session_info.get("session_id")
-                    conteos = session_info.get(
-                        "contadores", {"conocidos": 0, "intrusos": 0, "desconocidos": 0}
-                    )
-
                     if session_id:
-                        self.firebase.cerrar_sesion_camara(
-                            session_id=session_id, conteos=conteos
-                        )
+                        self.firebase.cerrar_sesion_camara(session_id=session_id)
 
             self.root.destroy()
             sys.exit(0)
