@@ -18,6 +18,7 @@ from pathlib import Path
 
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
+from src.storage.firebase_manager import FirebaseManager  # <--- IMPORTACIÓN AÑADIDA
 from src.utils.config import (
     CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
@@ -54,6 +55,10 @@ class FaceRecognitionGUI:
         self.active_camera_idx = 0
         self.view_mode = "SINGLE"  # "SINGLE" o "GRID"
         self.streams = []
+
+        # --- NUEVAS VARIABLES FIREBASE ---
+        self.firebase = FirebaseManager()
+        self.camera_sessions = {}  # Almacenará {idx_stream: {"session_id": ID, "registros_enviados": set(), "contadores": dict}}
 
         # Variables para controlar el zoom y paneo digital
         self.zoom_factor = tk.DoubleVar(value=1.0)
@@ -187,8 +192,10 @@ class FaceRecognitionGUI:
         )
         lbl_cams.pack(pady=(10, 5))
 
-        # Crear las opciones de la lista desplegable leyendo CAMERA_SOURCES
-        cam_options = [f"{cam.get('nombre', f'Cam {i}')} - {cam.get('curso_asignado', 'General')}" for i, cam in enumerate(CAMERA_SOURCES)]
+        cam_options = [
+            f"{cam.get('nombre', f'Cam {i}')} - {cam.get('curso_asignado', 'General')}"
+            for i, cam in enumerate(CAMERA_SOURCES)
+        ]
 
         self.cam_var = tk.StringVar()
         self.cam_combo = ttk.Combobox(
@@ -196,14 +203,13 @@ class FaceRecognitionGUI:
             textvariable=self.cam_var,
             values=cam_options,
             state="readonly",
-            font=("Helvetica", 10)
+            font=("Helvetica", 10),
         )
         self.cam_combo.pack(fill="x", pady=5)
 
         if cam_options:
             self.cam_combo.current(0)
 
-        # Vincular el evento de selección para que cambie la cámara automáticamente
         self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
 
         btn_grid = tk.Button(
@@ -263,12 +269,20 @@ class FaceRecognitionGUI:
             threshold=INSIGHTFACE_REC_THRESH,
         )
 
-        print("[INFO] Conectando a las cámaras...")
-        for cam in CAMERA_SOURCES:
+        print("[INFO] Conectando a las cámaras y base de datos...")
+        for i, cam in enumerate(CAMERA_SOURCES):
             stream = CameraStream(
                 source=cam["src"], reconnect_delay=RECONNECT_DELAY_SECONDS
             )
             self.streams.append(stream)
+
+            # --- INICIAR SESIÓN EN FIREBASE PARA CADA CÁMARA ---
+            session_id = self.firebase.iniciar_sesion_camara(cam)
+            self.camera_sessions[i] = {
+                "session_id": session_id,
+                "registros_enviados": set(),
+                "contadores": {"conocidos": 0, "intrusos": 0, "desconocidos": 0},
+            }
 
     def switch_camera(self, idx):
         self.active_camera_idx = idx
@@ -300,15 +314,6 @@ class FaceRecognitionGUI:
             (0, 0, 255),
             2,
         )
-        cv2.putText(
-            display_frame,
-            "Intentando reconectar automaticamente...",
-            (w // 2 - 210, h // 2 + 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            1,
-        )
         return display_frame
 
     def update_frame(self):
@@ -329,7 +334,6 @@ class FaceRecognitionGUI:
                 z = self.zoom_factor.get()
                 if z > 1.0:
                     h, w = frame.shape[:2]
-
                     new_h, new_w = int(h / z), int(w / z)
 
                     max_shift_x = w - new_w
@@ -369,7 +373,6 @@ class FaceRecognitionGUI:
         elif self.view_mode == "GRID":
             frames = []
             target_w, target_h = 320, 240
-            # IMPORTANTE: Ahora usamos enumerate para saber qué cámara específica estamos iterando
             for i, stream in enumerate(self.streams):
                 f = None
                 try:
@@ -381,20 +384,11 @@ class FaceRecognitionGUI:
                     proc_frame = f.copy()
 
                     if self.mode == "RECOGNIZE":
-                        # Pasamos el índice 'i' para que el motor sepa en qué curso evaluar
-                        proc_frame = self.process_recognition(f, proc_frame, stream_idx=i)
+                        proc_frame = self.process_recognition(
+                            f, proc_frame, stream_idx=i
+                        )
                     elif self.mode == "REGISTER":
                         proc_frame = self.process_registration(f, proc_frame)
-                    elif self.mode == "TRAINING":
-                        cv2.putText(
-                            proc_frame,
-                            "Entrenando modelo...",
-                            (20, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.8,
-                            (0, 165, 255),
-                            2,
-                        )
 
                     frames.append(cv2.resize(proc_frame, (target_w, target_h)))
                 else:
@@ -424,16 +418,6 @@ class FaceRecognitionGUI:
                 bottom = np.hstack((frames[2], frames[3]))
                 display_frame = np.vstack((top, bottom))
 
-            cv2.putText(
-                display_frame,
-                "VISTA GENERAL",
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 255),
-                2,
-            )
-
         if display_frame is not None:
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(rgb_frame)
@@ -448,7 +432,6 @@ class FaceRecognitionGUI:
 
         self.root.after(16, self.update_frame)
 
-    # NUEVO PARÁMETRO: stream_idx permite evaluar cada cámara independientemente en la vista GRID
     def process_recognition(self, frame, display_frame, stream_idx=None):
         context = self.vision_engine.detect(frame)
         context = self.tracker.update(context)
@@ -457,49 +440,86 @@ class FaceRecognitionGUI:
         if stream_idx is None:
             stream_idx = self.active_camera_idx
 
-        # Obtener el curso de la cámara que se está procesando
+        # Obtener datos de Firebase y de la cámara
+        session_info = self.camera_sessions.get(stream_idx)
         try:
             camara_activa = CAMERA_SOURCES[stream_idx]
             curso_actual = camara_activa.get("curso_asignado", "")
         except IndexError:
+            camara_activa = {}
             curso_actual = ""
 
-        # Normalizamos la cadena del curso actual (ej: "2_Informatica_B_Matutino" -> "2 informatica b matutino")
         curso_actual_norm = curso_actual.lower().replace("_", " ").strip()
 
         for face in context.faces:
             confidence = getattr(face, "confidence", 0.0)
             identity = getattr(face, "identity", "Calculando...")
             estado = ""
+            tipo_registro = ""
 
             if identity == "Desconocido":
-                color = (0, 0, 255) # Rojo: Totalmente desconocido/No registrado
+                color = (0, 0, 255)
+                tipo_registro = "DESCONOCIDO"
             elif identity == "Calculando...":
-                color = (255, 255, 0) # Cian: Motor procesando embedding
+                color = (255, 255, 0)
             else:
-                # Normalizamos la identidad (ej: "2_Informatica_B_Juan" -> "2 informatica b juan")
                 ident_norm = identity.lower().replace("_", " ").strip()
                 is_valid = False
 
-                # 1. Comprobación directa (si el curso exacto está dentro del nombre registrado)
                 if curso_actual_norm == "" or curso_actual_norm in ident_norm:
                     is_valid = True
                 else:
-                    # 2. Comprobación cruzada parcial (extraemos la parte del curso de la identidad registrada)
-                    # Asumiendo que se guardó como Curso_Nombre (separando por el último guion bajo)
                     partes = identity.rsplit("_", 1)
                     if len(partes) == 2:
-                        curso_registrado_norm = partes[0].lower().replace("_", " ").strip()
-                        # Si el texto que el usuario ingresó está contenido dentro del nombre del curso en config.py (o al revés)
-                        if curso_registrado_norm and (curso_registrado_norm in curso_actual_norm or curso_actual_norm in curso_registrado_norm):
+                        curso_registrado_norm = (
+                            partes[0].lower().replace("_", " ").strip()
+                        )
+                        if curso_registrado_norm and (
+                            curso_registrado_norm in curso_actual_norm
+                            or curso_actual_norm in curso_registrado_norm
+                        ):
                             is_valid = True
 
                 if is_valid:
-                    color = (0, 255, 0) # Verde: Cadete del curso correcto
+                    color = (0, 255, 0)
+                    estado = " [PRESENTE]"
+                    tipo_registro = "PRESENTE"
                 else:
-                    color = (0, 165, 255) # Naranja: Registrado pero es de otro curso
+                    color = (0, 165, 255)
                     estado = " [INTRUSO]"
+                    tipo_registro = "INTRUSO"
 
+            # --- LÓGICA DE REGISTRO EN FIREBASE (SUBCOLECCIONES) ---
+            if (
+                identity != "Calculando..."
+                and session_info
+                and session_info["session_id"]
+            ):
+                clave_registro = (
+                    getattr(face, "track_id", "DESC")
+                    if identity == "Desconocido"
+                    else identity
+                )
+
+                if clave_registro not in session_info["registros_enviados"]:
+                    session_info["registros_enviados"].add(clave_registro)
+
+                    self.firebase.registrar_deteccion(
+                        session_id=session_info["session_id"],
+                        identidad=identity,
+                        estado=tipo_registro,
+                        confianza=confidence,
+                        camara_info=camara_activa,
+                    )
+
+                    if tipo_registro == "PRESENTE":
+                        session_info["contadores"]["conocidos"] += 1
+                    elif tipo_registro == "INTRUSO":
+                        session_info["contadores"]["intrusos"] += 1
+                    elif tipo_registro == "DESCONOCIDO":
+                        session_info["contadores"]["desconocidos"] += 1
+
+            # Renderizado visual
             cv2.rectangle(
                 display_frame,
                 (face.left, face.top),
@@ -507,9 +527,11 @@ class FaceRecognitionGUI:
                 color,
                 2,
             )
-            
+
             label = (
-                f"{identity}{estado} ({confidence:.1f}%)" if confidence > 0 else f"{identity}{estado}"
+                f"{identity}{estado} ({confidence:.1f}%)"
+                if confidence > 0
+                else f"{identity}{estado}"
             )
             cv2.putText(
                 display_frame,
@@ -612,9 +634,7 @@ class FaceRecognitionGUI:
         self.register_name = name.strip()
         self.register_course = course.strip()
 
-        # Combinamos curso y nombre para la etiqueta única
         self.identity_label = f"{self.register_course}_{self.register_name}"
-
         self.person_dir = os.path.join(DATASET_DIR, self.identity_label)
         os.makedirs(self.person_dir, exist_ok=True)
 
@@ -694,8 +714,22 @@ class FaceRecognitionGUI:
             "Salir", "¿Estás seguro que deseas cerrar el programa?"
         ):
             self.running = False
+
+            # Detener cámaras
             for stream in self.streams:
                 stream.release()
+
+            # --- CERRAR SESIONES DE FIREBASE ---
+            print(
+                "[INFO] Subiendo contadores finales a Firebase y cerrando sesiones..."
+            )
+            for i, session_info in self.camera_sessions.items():
+                if session_info["session_id"]:
+                    self.firebase.cerrar_sesion_camara(
+                        session_id=session_info["session_id"],
+                        conteos=session_info["contadores"],
+                    )
+
             self.root.destroy()
             sys.exit(0)
 

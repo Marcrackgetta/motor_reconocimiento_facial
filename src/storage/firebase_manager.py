@@ -5,7 +5,6 @@ from google.cloud.firestore import SERVER_TIMESTAMP, GeoPoint
 from datetime import datetime
 import logging
 
-
 class FirebaseManager:
     def __init__(self, cred_path="credenciales.json"):
         try:
@@ -18,55 +17,58 @@ class FirebaseManager:
             logging.error(f"Error al conectar con Firebase: {e}")
             self.db = None
 
-    def registrar_deteccion(self, identidad, estado, confianza, camara_info):
-        """Guarda un registro individual de un estudiante/persona."""
-        if not self.db:
-            return
-
-        ahora = datetime.now()
-        data = {
-            "identidad": identidad,
-            "estado": estado,  # "PRESENTE", "CURSO INCORRECTO", "DESCONOCIDO"
-            "confianza": confianza,
-            "fecha": ahora.strftime("%Y-%m-%d"),
-            "hora": ahora.strftime("%H:%M:%S"),
-            "camara_nombre": camara_info.get("nombre"),
-            "curso_asignado": camara_info.get("curso_asignado"),
-            "ubicacion": GeoPoint(
-                camara_info.get("lat", 0.0), camara_info.get("lon", 0.0)
-            ),
-            "timestamp": SERVER_TIMESTAMP,
-        }
-
-        try:
-            # Crea un documento en la colección "Detecciones"
-            self.db.collection("Detecciones").add(data)
-            logging.info(f"Registro guardado en BD: {identidad} - {estado}")
-        except Exception as e:
-            logging.error(f"Error al guardar detección: {e}")
-
     def iniciar_sesion_camara(self, camara_info):
-        """Crea el registro de la cámara al encenderse y retorna el ID del documento."""
+        """Crea el documento principal de la cámara y retorna su ID."""
         if not self.db:
             return None
 
+        # Obtenemos las coordenadas (si no existen en config.py, usa 0.0 por defecto)
+        lat = camara_info.get("lat", 0.0)
+        lon = camara_info.get("lon", 0.0)
+
         data = {
-            "camara_nombre": camara_info.get("nombre"),
-            "curso_asignado": camara_info.get("curso_asignado"),
+            "camara_nombre": camara_info.get("nombre", "Camara Desconocida"),
+            "curso_asignado": camara_info.get("curso_asignado", "General"),
             "hora_inicio": SERVER_TIMESTAMP,
             "estado": "ACTIVA",
             "conteos": {"conocidos": 0, "intrusos": 0, "desconocidos": 0},
+            "ubicacion": GeoPoint(lat, lon)
         }
         try:
+            # Crea un documento en la colección principal "SesionesCamara"
             doc_ref = self.db.collection("SesionesCamara").document()
             doc_ref.set(data)
+            logging.info(f"Sesión de cámara iniciada. ID: {doc_ref.id}")
             return doc_ref.id
         except Exception as e:
             logging.error(f"Error al iniciar sesión de cámara: {e}")
             return None
 
-    def cerrar_sesion_camara(self, session_id, conteos, avg_fps):
-        """Actualiza el registro de la cámara al apagarse con los totales finales."""
+    def registrar_deteccion(self, session_id, identidad, estado, confianza, camara_info):
+        """Guarda un registro dentro de la subcolección 'Detecciones' de la cámara activa."""
+        if not self.db or not session_id:
+            return
+
+        ahora = datetime.now()
+        data = {
+            "identidad": identidad,
+            "estado": estado,  # "PRESENTE", "INTRUSO", "DESCONOCIDO"
+            "confianza": confianza,
+            "fecha": ahora.strftime("%Y-%m-%d"),
+            "hora": ahora.strftime("%H:%M:%S"),
+            "curso_asignado_camara": camara_info.get("curso_asignado", "General"),
+            "timestamp": SERVER_TIMESTAMP,
+        }
+
+        try:
+            # Crea el documento en la subcolección Detecciones dentro del ID de la sesión
+            self.db.collection("SesionesCamara").document(session_id).collection("Detecciones").add(data)
+            logging.info(f"Registro guardado en subcolección: {identidad} - {estado}")
+        except Exception as e:
+            logging.error(f"Error al guardar detección en subcolección: {e}")
+
+    def cerrar_sesion_camara(self, session_id, conteos, avg_fps=0.0):
+        """Actualiza el documento principal de la cámara con los totales al cerrarse."""
         if not self.db or not session_id:
             return
 
@@ -79,6 +81,6 @@ class FirebaseManager:
                     "fps_promedio_sesion": round(avg_fps, 2),
                 }
             )
-            logging.info("Sesión de cámara cerrada y guardada en BD.")
+            logging.info(f"Sesión de cámara {session_id} cerrada y guardada en BD.")
         except Exception as e:
             logging.error(f"Error al cerrar sesión de cámara: {e}")
