@@ -21,6 +21,15 @@ class FirebaseManager:
         # Memoria temporal para rastrear el ID y estado de creación de cada sesión activa
         self.active_sessions = {}
 
+    def _parse_identity(self, identity):
+        if not identity or identity in ["Desconocido", "Calculando..."]:
+            return identity, "Desconocido"
+        if "_" in identity:
+            nombre_limpio = "_".join(identity.rsplit("_", 1)[:-1])
+            curso = identity.rsplit("_", 1)[-1]
+            return nombre_limpio, curso
+        return identity, "Desconocido"
+
     def _es_del_curso(self, identity, curso_actual):
         """Valida si un cadete pertenece al curso de la cámara activa"""
         curso_actual_norm = curso_actual.lower().replace("_", " ").strip()
@@ -29,14 +38,15 @@ class FirebaseManager:
         if curso_actual_norm == "" or curso_actual_norm in ident_norm:
             return True
 
-        partes = identity.rsplit("_", 1)
-        if len(partes) == 2:
-            curso_reg_norm = partes[0].lower().replace("_", " ").strip()
-            if curso_reg_norm and (
-                curso_reg_norm in curso_actual_norm
-                or curso_actual_norm in curso_reg_norm
-            ):
-                return True
+        _, curso_reg = self._parse_identity(identity)
+        curso_reg_norm = curso_reg.lower().replace("_", " ").strip()
+
+        if curso_reg_norm and (
+            curso_reg_norm in curso_actual_norm
+            or curso_actual_norm in curso_reg_norm
+        ):
+            return True
+            
         return False
 
     def iniciar_sesion_camara(self, camara_info, known_names=None):
@@ -126,7 +136,8 @@ class FirebaseManager:
                         if name != "Desconocido" and self._es_del_curso(
                             name, curso_actual
                         ):
-                            alumnos_esperados.append(name)
+                            nombre_limpio, _ = self._parse_identity(name)
+                            alumnos_esperados.append(nombre_limpio)
 
                 data = {
                     "fecha": datetime.now().strftime("%Y-%m-%d"),
@@ -147,31 +158,27 @@ class FirebaseManager:
                 )
 
             actualizado = False
+            nombre_limpio, curso_limpio = self._parse_identity(identidad)
 
             if estado == "PRESENTE":
-                if identidad not in data["lista_presentes"]:
-                    data["lista_presentes"].append(identidad)
+                if nombre_limpio not in data["lista_presentes"]:
+                    data["lista_presentes"].append(nombre_limpio)
                     data["total_presentes"] = len(data["lista_presentes"])
                     actualizado = True
 
-                if identidad in data["lista_ausentes"]:
-                    data["lista_ausentes"].remove(identidad)
+                if nombre_limpio in data["lista_ausentes"]:
+                    data["lista_ausentes"].remove(nombre_limpio)
                     data["total_ausentes"] = len(data["lista_ausentes"])
                     actualizado = True
 
             elif estado == "INTRUSO":
-                partes = identidad.rsplit("_", 1)
-                curso_origen = partes[0] if len(partes) == 2 else "Desconocido"
-                nombre_intruso = partes[1] if len(partes) == 2 else identidad
-
                 ya_registrado = any(
-                    i.get("identidad") == identidad for i in data["lista_intrusos"]
+                    i.get("nombre") == nombre_limpio for i in data["lista_intrusos"]
                 )
                 if not ya_registrado:
                     intruso_info = {
-                        "identidad": identidad,
-                        "nombre": nombre_intruso,
-                        "curso_esperado": curso_origen,
+                        "nombre": nombre_limpio,
+                        "curso_esperado": curso_limpio,
                         "hora_primera_deteccion": datetime.now().strftime("%H:%M:%S"),
                         "duracion_segundos": 0.0,
                     }
@@ -211,19 +218,20 @@ class FirebaseManager:
                 data = doc.to_dict()
                 intrusos = data.get("lista_intrusos", [])
                 modificado = False
+                nombre_limpio, _ = self._parse_identity(identidad)
 
                 for idx, intruso in enumerate(intrusos):
-                    if intruso.get("identidad") == identidad:
+                    if intruso.get("nombre") == nombre_limpio:
                         duracion_actual = intruso.get("duracion_segundos", 0.0)
                         intrusos[idx]["duracion_segundos"] = duracion_actual + duracion
                         modificado = True
                         break
 
-                    if modificado:
-                        doc_ref.update({"lista_intrusos": intrusos})
-                        logging.info(
-                            f"Permanencia de intruso recalculada: {duracion}s añadidos a {identidad}."
-                        )
+                if modificado:
+                    doc_ref.update({"lista_intrusos": intrusos})
+                    logging.info(
+                        f"Permanencia de intruso recalculada: {duracion}s añadidos a {nombre_limpio}."
+                    )
         except Exception as e:
             logging.error(f"Error al modificar permanencia de intruso: {e}")
 
