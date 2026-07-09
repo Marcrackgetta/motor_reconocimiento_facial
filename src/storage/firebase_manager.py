@@ -234,7 +234,7 @@ class FirebaseManager:
             # Finalizar estado en raíz
             self.db.collection("SesionesCamara").document(session_id).update(
                 {
-                    "estado": "FINALIZADA",
+                    "estado": "APAGADA",
                 }
             )
 
