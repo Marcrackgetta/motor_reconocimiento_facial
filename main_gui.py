@@ -511,6 +511,7 @@ class FaceRecognitionGUI:
                         )
 
                         # Mapea y actualiza directamente la subcolección usando el nuevo ID compuesto
+                        print(f"DEBUG UI -> DB: Enviando identidad {identity}")
                         doc_id = self.firebase.registrar_deteccion(
                             session_id=session_id,
                             identidad=identity,
@@ -576,16 +577,16 @@ class FaceRecognitionGUI:
                 color,
                 2,
             )
-            partes = identity.split("_")
+            partes = identity.split()
             if len(partes) >= 2:
-                nombre_mostrar = f"{partes[0]} {partes[1]}"
+                nombre_mostrar = " ".join(partes[-2:])
             else:
                 nombre_mostrar = identity
 
             if confidence > 0:
-                label = f"{nombre_mostrar} - {tipo_registro} ({confidence:.1f}%)"
+                label = f"{nombre_mostrar}{estado_txt} ({confidence:.1f}%)"
             else:
-                label = f"{nombre_mostrar} - {tipo_registro}"
+                label = f"{nombre_mostrar}{estado_txt}"
             cv2.putText(
                 display_frame,
                 label,

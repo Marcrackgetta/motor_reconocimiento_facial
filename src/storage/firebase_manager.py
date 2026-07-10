@@ -24,15 +24,15 @@ class FirebaseManager:
     def _parse_identity(self, identity):
         if not identity or identity in ["Desconocido", "Calculando..."]:
             return identity, "Desconocido"
-        
-        partes = identity.split("_")
+
+        partes = identity.split()  # Separa por espacios
         if len(partes) >= 2:
-            # Toma estrictamente las dos primeras posiciones como Nombre y Apellido
-            nombre_limpio = f"{partes[0]} {partes[1]}"
-            # Une todo lo que sobra como el curso
-            curso = "_".join(partes[2:]) if len(partes) > 2 else "Desconocido"
+            # Toma estrictamente las dos ÚLTIMAS palabras como Nombre y Apellido
+            nombre_limpio = " ".join(partes[-2:])
+            # Toma todo lo del principio como el curso
+            curso = " ".join(partes[:-2]) if len(partes) > 2 else "Desconocido"
             return nombre_limpio, curso
-            
+
         return identity, "Desconocido"
 
     def _es_del_curso(self, identity, curso_actual):
@@ -47,11 +47,10 @@ class FirebaseManager:
         curso_reg_norm = curso_reg.lower().replace("_", " ").strip()
 
         if curso_reg_norm and (
-            curso_reg_norm in curso_actual_norm
-            or curso_actual_norm in curso_reg_norm
+            curso_reg_norm in curso_actual_norm or curso_actual_norm in curso_reg_norm
         ):
             return True
-            
+
         return False
 
     def iniciar_sesion_camara(self, camara_info, known_names=None):
@@ -148,7 +147,7 @@ class FirebaseManager:
                     "fecha": datetime.now().strftime("%Y-%m-%d"),
                     "hora_inicio": session_data["hora_inicio"],
                     "hora_fin": "",
-                    "curso_asignado_camara": curso_actual,
+                    "curso": curso_actual,
                     "total_presentes": 0,
                     "lista_presentes": [],
                     "total_ausentes": len(alumnos_esperados),
