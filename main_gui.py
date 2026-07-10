@@ -576,19 +576,16 @@ class FaceRecognitionGUI:
                 color,
                 2,
             )
-            if identity not in ["Desconocido", "Calculando..."]:
-                if "_" in identity:
-                    nombre_limpio = "_".join(identity.rsplit("_", 1)[:-1])
-                    display_identity = nombre_limpio.replace("_", " ")
-                else:
-                    display_identity = identity
+            partes = identity.split("_")
+            if len(partes) >= 2:
+                nombre_mostrar = f"{partes[0]} {partes[1]}"
             else:
-                display_identity = identity
+                nombre_mostrar = identity
 
             if confidence > 0:
-                label = f"{display_identity} - {tipo_registro} ({confidence:.1f}%)"
+                label = f"{nombre_mostrar} - {tipo_registro} ({confidence:.1f}%)"
             else:
-                label = f"{display_identity} - {tipo_registro}"
+                label = f"{nombre_mostrar} - {tipo_registro}"
             cv2.putText(
                 display_frame,
                 label,

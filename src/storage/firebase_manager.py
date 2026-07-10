@@ -24,10 +24,15 @@ class FirebaseManager:
     def _parse_identity(self, identity):
         if not identity or identity in ["Desconocido", "Calculando..."]:
             return identity, "Desconocido"
-        if "_" in identity:
-            nombre_limpio = "_".join(identity.rsplit("_", 1)[:-1])
-            curso = identity.rsplit("_", 1)[-1]
+        
+        partes = identity.split("_")
+        if len(partes) >= 2:
+            # Toma estrictamente las dos primeras posiciones como Nombre y Apellido
+            nombre_limpio = f"{partes[0]} {partes[1]}"
+            # Une todo lo que sobra como el curso
+            curso = "_".join(partes[2:]) if len(partes) > 2 else "Desconocido"
             return nombre_limpio, curso
+            
         return identity, "Desconocido"
 
     def _es_del_curso(self, identity, curso_actual):
