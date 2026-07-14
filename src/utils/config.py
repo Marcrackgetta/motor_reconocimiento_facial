@@ -3,19 +3,19 @@
 CAMERA_SOURCES = [
     {
         "src": 0,
-        "curso_asignado": "3_Info_B",
+        "curso_asignado": "2_INFO_B_MAT",
         "lat": -0.220000,
         "lon": -78.511944,
     },
     {
         "src": 1,
-        "curso_asignado": "3_CN_A_Mat",
+        "curso_asignado": "3_CC_A_Mat",
         "lat": -2.129581,
         "lon": -79.931084,
     },
     {
-        "src": 3,
-        "curso_asignado": "3_CT_A_Mat",
+        "src": 2,
+        "curso_asignado": "3_CONT_A_Mat",
         "lat": -2.128720,
         "lon": -79.931061,
     },
