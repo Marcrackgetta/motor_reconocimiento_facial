@@ -64,7 +64,6 @@ class FirebaseManager:
 
         # Registro principal: La cámara se marca como ACTIVA
         root_data = {
-            "camara_nombre": camara_info.get("nombre", "Camara Desconocida"),
             "curso_asignado": curso_actual,
             "estado": "ACTIVA",
             "ubicacion": GeoPoint(lat, lon),
