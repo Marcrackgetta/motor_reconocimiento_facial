@@ -2,21 +2,18 @@
 
 CAMERA_SOURCES = [
     {
-        "nombre": "Cámara LP",
         "src": 0,
         "curso_asignado": "3_Info_B",
         "lat": -0.220000,
         "lon": -78.511944,
     },
     {
-        "nombre": "Webcam USB1",
         "src": 1,
         "curso_asignado": "3_CN_A_Mat",
         "lat": -2.129581,
         "lon": -79.931084,
     },
     {
-        "nombre": "Webcam USB2",
         "src": 3,
         "curso_asignado": "3_CT_A_Mat",
         "lat": -2.128720,

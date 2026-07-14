@@ -185,7 +185,7 @@ class FaceRecognitionGUI:
         lbl_cams.pack(pady=(10, 5))
 
         cam_options = [
-            f"{cam.get('nombre', f'Cam {i}')} - {cam.get('curso_asignado', 'General')}"
+            f"{cam.get('curso_asignado', 'General')}"
             for i, cam in enumerate(CAMERA_SOURCES)
         ]
         self.cam_var = tk.StringVar()
