@@ -243,6 +243,7 @@ class FaceRecognitionGUI:
 
     def init_backend(self):
         print("[INFO] Inicializando núcleos y sub-motores de video...")
+        self.firebase.forzar_reseteo_camaras(CAMERA_SOURCES)
         model = FileManager.load_model(Path(MODEL_PATH))
         known_encodings = model.get("encodings", [])
         known_names = model.get("names", [])
@@ -299,19 +300,28 @@ class FaceRecognitionGUI:
             return
 
         for i, stream in enumerate(self.streams):
-            if (
-                getattr(stream, "is_connected", False)
-                and self.camera_sessions[i].get("session_id") is None
-            ):
+            is_connected = getattr(stream, "is_connected", False)
+            session_id = self.camera_sessions[i].get("session_id")
+
+            # 1. Cuando hay conexión y video nuevo, marcamos la cámara como ACTIVA
+            if is_connected and session_id is None:
                 if stream.get_frame() is not None:
                     print(
                         f"[INFO] Video detectado en la cámara {i}. Iniciando sesión en Firebase..."
                     )
-                    session_id = self.firebase.iniciar_sesion_camara(
+                    new_session_id = self.firebase.iniciar_sesion_camara(
                         self.camera_sessions[i]["cam_info"],
                         known_names=self.recognition_engine.known_names,
                     )
-                    self.camera_sessions[i]["session_id"] = session_id
+                    self.camera_sessions[i]["session_id"] = new_session_id
+
+            # 2. NUEVO: Cuando se pierde la conexión pero la sesión seguía iniciada, la marcamos como APAGADA
+            elif not is_connected and session_id is not None:
+                print(
+                    f"[WARNING] Señal de video interrumpida en la cámara {i}. Marcando como APAGADA en Firebase..."
+                )
+                self.firebase.cerrar_sesion_camara(session_id=session_id)
+                self.camera_sessions[i]["session_id"] = None
 
         display_frame = None
 

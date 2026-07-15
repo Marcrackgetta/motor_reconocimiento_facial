@@ -21,6 +21,33 @@ class FirebaseManager:
         # Memoria temporal para rastrear el ID y estado de creación de cada sesión activa
         self.active_sessions = {}
 
+    def forzar_reseteo_camaras(self, camera_sources):
+        """Limpia estados 'zombie' forzando todas las cámaras a APAGADA al inicio."""
+        if not self.db:
+            return
+
+        for cam in camera_sources:
+            lat = cam.get("lat", 0.0)
+            lon = cam.get("lon", 0.0)
+            curso_actual = cam.get("curso_asignado", "General")
+            curso_id = curso_actual.strip().replace(" ", "_")
+
+            try:
+                # Usamos merge=True para modificar solo el estado sin borrar historial si existiera
+                self.db.collection("SesionesCamara").document(curso_id).set(
+                    {
+                        "curso_asignado": curso_actual,
+                        "estado": "APAGADA",
+                        "ubicacion": GeoPoint(lat, lon),
+                    },
+                    merge=True,
+                )
+                logging.info(
+                    f"Estado limpiado a APAGADA para la cámara del curso: {curso_id}"
+                )
+            except Exception as e:
+                logging.error(f"Error al resetear estado de cámara {curso_id}: {e}")
+
     def _parse_identity(self, identity):
         if not identity or identity in ["Desconocido", "Calculando..."]:
             return identity, "Desconocido"
