@@ -51,10 +51,11 @@ class FaceTracker:
             dtype=np.float32,
         )
 
+        # Modificación: Usamos class_id para guardar el índice original del rostro
         detections = sv.Detections(
             xyxy=xyxy,
             confidence=confidence,
-            class_id=np.zeros(len(context.faces), dtype=np.int32),
+            class_id=np.arange(len(context.faces), dtype=np.int32),
         )
 
         tracked = self.tracker.update_with_detections(detections)
@@ -62,10 +63,12 @@ class FaceTracker:
         if tracked.tracker_id is None or len(tracked) == 0:
             return context
 
-        for face, track_id in zip(
-            context.faces,
+        # Modificación: Recuperamos el rostro exacto mapeando de vuelta con el class_id (índice original)
+        for track_id, original_idx in zip(
             tracked.tracker_id,
+            tracked.class_id,
         ):
+            face = context.faces[original_idx]
             face.track_id = int(track_id)
 
             self.generated_ids.add(face.track_id)

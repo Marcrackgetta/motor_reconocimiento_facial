@@ -61,6 +61,8 @@ class RecognitionEngine:
             if track_id in self.track_cache:
                 cached = self.track_cache[track_id]
                 time_since_validation = current_time - cached.get("last_validation", 0)
+                # Modificación: Recuperar intentos previos (si no existe, empezamos en 1)
+                attempts = cached.get("attempts", 1)
 
                 if cached["identity"] != "Desconocido":
                     # Si es conocido, re-validar cada 3.0 segundos para corregir errores del tracker por oclusión
@@ -69,8 +71,9 @@ class RecognitionEngine:
                     else:
                         use_cache = True
                 else:
-                    # Si es desconocido, re-validar cada 1.5 segundos
-                    if time_since_validation > 1.5:
+                    # Modificación: Enfriamiento progresivo. 1.5s rápido, luego 10s.
+                    cooldown = 1.5 if attempts <= 2 else 10.0
+                    if time_since_validation > cooldown:
                         needs_extraction = True
                     else:
                         use_cache = True
@@ -105,10 +108,13 @@ class RecognitionEngine:
             )
 
             if face.embedding is None:
+                # Modificación: Si falla la extracción, igual sumamos un intento
+                prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
                 self.track_cache[track_id] = {
                     "identity": "Desconocido",
                     "confidence": 0.0,
                     "last_validation": current_time,
+                    "attempts": prev_attempts + 1,
                 }
                 face.identity = "Desconocido"
                 face.confidence = 0.0
@@ -132,11 +138,16 @@ class RecognitionEngine:
             face.confidence = round(best_similarity * 100, 2)
             face.recognition_state = "RECOGNIZED" if is_recognized else "UNKNOWN"
 
-            # GUARDAR EN CACHÉ (Actualizando timestamp de validación)
+            # Modificación: Recuperar intentos previos y sumar 1 si sigue siendo desconocido (o resetear a 0)
+            prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
+            new_attempts = prev_attempts + 1 if not is_recognized else 0
+
+            # GUARDAR EN CACHÉ (Actualizando timestamp de validación e intentos)
             self.track_cache[track_id] = {
                 "identity": face.identity,
                 "confidence": face.confidence,
                 "last_validation": current_time,
+                "attempts": new_attempts,
             }
 
         # Purga de memoria para evitar saturación

@@ -261,8 +261,6 @@ class FaceRecognitionGUI:
             )
             self.streams.append(stream)
 
-            # NO iniciamos la sesión aquí. Solo preparamos el diccionario
-            # Guardamos 'cam_info' para registrar la cámara más tarde cuando dé video.
             self.camera_sessions[i] = {"session_id": None, "cam_info": cam}
 
     def switch_camera(self, idx):
@@ -301,12 +299,10 @@ class FaceRecognitionGUI:
             return
 
         for i, stream in enumerate(self.streams):
-            # Si el stream tiene conexión pero la sesión en Firebase aún no se ha creado
             if (
                 getattr(stream, "is_connected", False)
                 and self.camera_sessions[i].get("session_id") is None
             ):
-                # Confirmar que realmente ya llegó un fotograma
                 if stream.get_frame() is not None:
                     print(
                         f"[INFO] Video detectado en la cámara {i}. Iniciando sesión en Firebase..."
@@ -495,9 +491,13 @@ class FaceRecognitionGUI:
 
             # Transacciones dinámicas hacia la subcolección unificada
             if identity != "Calculando..." and session_id:
-                cooldown_key = (
-                    identity if identity != "Desconocido" else f"DESC_{track_id}"
-                )
+                # ---------------------------------------------------------------------
+                # CAMBIO CRÍTICO:
+                # Antes era: identity if identity != "Desconocido" else f"DESC_{track_id}"
+                # Agrupamos todos los desconocidos globalmente bajo la llave "Desconocido".
+                # Así evitamos sobresaturar Firebase cada vez que el tracker cambia el ID.
+                # ---------------------------------------------------------------------
+                cooldown_key = identity
 
                 if track_id not in self.active_tracks[stream_idx]:
                     last_db_time = self.db_cooldowns[stream_idx].get(cooldown_key, 0)
@@ -510,7 +510,6 @@ class FaceRecognitionGUI:
                             else identity
                         )
 
-                        # Mapea y actualiza directamente la subcolección usando el nuevo ID compuesto
                         print(f"DEBUG UI -> DB: Enviando identidad {identity}")
                         doc_id = self.firebase.registrar_deteccion(
                             session_id=session_id,
