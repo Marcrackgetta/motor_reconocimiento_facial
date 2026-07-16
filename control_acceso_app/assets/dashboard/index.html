@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HQ - Central de Monitoreo en Vivo (Segura)</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg-general: #f0f4f8;
+            --bg-card: #ffffff;
+            --azul-boton: #3b82f6;
+            --texto-principal: #0f172a;
+            --texto-secundario: #64748b;
+            --borde: #e2e8f0;
+            --rojo-alerta-bg: #fee2e2;
+            --rojo-alerta-txt: #dc2626;
+            --verde-ok-bg: #d1fae5;
+            --verde-ok-txt: #059669;
+            --amarillo-badge: #fef3c7;
+            --amarillo-badge-txt: #d97706;
+            --morado-badge: #f3e8ff;
+            --morado-badge-txt: #7e22ce;
+            --gris-offline-bg: #e2e8f0;
+            --gris-offline-txt: #475569;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-general);
+            color: var(--texto-principal);
+            padding: 20px;
+        }
+
+        /* --- ESTILOS DE LA CENTRAL --- */
+        header {
+            background-color: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+            border: 1px solid var(--borde);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+        }
+
+        .header-logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            margin-right: 16px;
+            color: white;
+        }
+
+        header h1 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        header p {
+            color: var(--texto-secundario);
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr 420px;
+            gap: 20px;
+            height: calc(100vh - 120px);
+            min-height: 650px;
+        }
+
+        @media (max-width: 1250px) {
+            .grid-layout {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--borde);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card h2 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            justify-content: space-between;
+            display: flex;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--texto-secundario);
+        }
+
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--borde);
+            background: #f8fafc;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        select:focus {
+            border-color: var(--azul-boton);
+        }
+
+        option.desconectada {
+            color: #94a3b8;
+            text-decoration: line-through;
+        }
+
+        option.activa {
+            color: #0f172a;
+            font-weight: 500;
+        }
+
+        #mapa {
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            z-index: 1;
+            min-height: 400px;
+        }
+
+        .log-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            border: 1px solid var(--borde);
+            border-radius: 10px;
+            background: #fff;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .log-header {
+            padding: 12px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            background: #fafbfc;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge.ok {
+            background: var(--verde-ok-bg);
+            color: var(--verde-ok-txt);
+        }
+
+        .badge.alerta {
+            background: var(--rojo-alerta-bg);
+            color: var(--rojo-alerta-txt);
+        }
+
+        .badge.amarillo {
+            background: var(--amarillo-badge);
+            color: var(--amarillo-badge-txt);
+        }
+
+        .badge.morado {
+            background: var(--morado-badge);
+            color: var(--morado-badge-txt);
+        }
+
+        .badge.offline {
+            background: var(--gris-offline-bg);
+            color: var(--gris-offline-txt);
+        }
+
+        .log-body {
+            padding: 14px;
+            border-top: 1px solid #f1f5f9;
+            font-size: 12px;
+        }
+
+        .data-box {
+            background: #f8fafc;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--borde);
+            margin: 8px 0;
+        }
+
+        .student-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="header-left">
+            <div class="header-logo">🔥</div>
+            <div>
+                <h1>HQ - Central de Monitoreo - SesionesCamara</h1>
+                <p>Sincronización simultánea en vivo con subcolección RegistroDiario</p>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div
+                style="font-size: 12px; font-weight: 600; color: #059669; background: #d1fae5; padding: 6px 12px; border-radius: 20px;">
+                ⚡ 100% Sincronizado
+            </div>
+        </div>
+    </header>
+
+    <div class="grid-layout">
+        <div class="card">
+            <h2>⚙️ Selector de Cámara</h2>
+            <div class="form-group">
+                <label>Elige la cámara (de SesionesCamara):</label>
+                <select id="selForma" onchange="consultarFirebase()">
+                    <option value="">⏳ Cargando desde tu Firebase...</option>
+                </select>
+            </div>
+
+            <div id="statusConsulta"
+                style="font-size: 12px; color: var(--texto-secundario); margin-top: 15px; line-height: 1.4; word-break: break-word;">
+                Selecciona un curso/cámara para sincronizar en tiempo real.
+            </div>
+        </div>
+
+        <div class="card" style="padding: 10px;">
+            <div id="mapa"></div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Monitoreo Activo</h2>
+            <div class="log-list" id="contenedorLogs">
+                <div id="mensajeVacio" style="text-align: center; color: #94a3b8; font-size: 13px; padding: 20px;">
+                    Ninguna consulta realizada aún. ¡Elige una cámara para empezar el monitoreo en vivo, ñaño!
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        // --- 1. CONFIGURACIÓN DE FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU",
+            authDomain: "motor-c7e0d.firebaseapp.com",
+            projectId: "motor-c7e0d",
+            storageBucket: "motor-c7e0d.firebasestorage.app",
+            messagingSenderId: "939488062488",
+            appId: "1:939488062488:web:fa939b5ee7535a1089a76d",
+            measurementId: "G-VYYSKWPDCS"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const mapa = L.map('mapa').setView([-2.128589, -79.931099], 18);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapa);
+
+        // --- 2. ICONOS PERSONALIZADOS PARA EL MAPA ---
+        const iconoPrendida = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        const iconoApagada = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        let marcadorActual = null;
+        let observadorCamara = null;
+        let observadorRegistro = null;
+        let observadorLista = null;
+        let datosCamaraActual = null;
+        let datosRegistroActual = null;
+
+        // --- FUNCIÓN HELPER PARA SACAR NOMBRE LIMPIO ---
+        function obtenerNombreEstudiante(est) {
+            if (typeof est === 'object' && est !== null) {
+                return est.nombre || est.name || est.alumno || est.id || JSON.stringify(est);
+            }
+            return String(est);
+        }
+
+        function iniciarObservadorListaCamaras() {
+            const selForma = document.getElementById('selForma');
+            const statusDiv = document.getElementById('statusConsulta');
+
+            if (observadorLista) observadorLista();
+
+            observadorLista = db.collection("SesionesCamara").onSnapshot((querySnapshot) => {
+                const valorSeleccionado = selForma.value;
+                selForma.innerHTML = '<option value="">-- Selecciona una cámara --</option>';
+
+                if (querySnapshot.empty) {
+                    selForma.innerHTML = '<option value="">⚠️ No hay documentos en SesionesCamara</option>';
+                    return;
+                }
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const idDoc = doc.id;
+
+                    const estaDesconectada =
+                        data.activo === false ||
+                        String(data.activo).toLowerCase() === "false" ||
+                        String(data.estado).toLowerCase() === "desconectada" ||
+                        String(data.estado).toLowerCase() === "inactiva" ||
+                        String(data.estado).toLowerCase() === "apagada" ||
+                        String(data.status).toLowerCase() === "offline";
+
+                    const option = document.createElement("option");
+                    option.value = idDoc;
+
+                    if (estaDesconectada) {
+                        option.textContent = `🔴 ✖ ${idDoc} (DESACTIVADA)`;
+                        option.className = "desconectada";
+                        option.style.textDecoration = "line-through";
+                        option.style.color = "#94a3b8";
+                    } else {
+                        option.textContent = `🟢 ${idDoc}`;
+                        option.className = "activa";
+                    }
+
+                    selForma.appendChild(option);
+                });
+
+                if (valorSeleccionado) {
+                    selForma.value = valorSeleccionado;
+                }
+
+                statusDiv.innerHTML = `✔ <b>${querySnapshot.size}</b> cámaras cargadas en tiempo real.`;
+            }, (error) => {
+                console.error("Error al cargar lista en vivo:", error);
+                statusDiv.innerHTML = `<span style="color:red;">❌ Error al cargar listado: ${error.message}</span>`;
+            });
+        }
+
+        function consultarFirebase() {
+            const idCamara = document.getElementById('selForma').value;
+            const statusDiv = document.getElementById('statusConsulta');
+            const mensajeVacio = document.getElementById('mensajeVacio');
+
+            if (!idCamara) {
+                alert("¡Pilas! Primero selecciona una cámara del listado.");
+                return;
+            }
+
+            if (observadorCamara) observadorCamara();
+            if (observadorRegistro) observadorRegistro();
+
+            if (mensajeVacio) mensajeVacio.style.display = 'none';
+            statusDiv.innerHTML = `📡 Conectando radares a <b>${idCamara}</b>...`;
+
+            datosCamaraActual = null;
+            datosRegistroActual = null;
+
+            observadorCamara = db.collection("SesionesCamara").doc(idCamara).onSnapshot((docCamara) => {
+                if (!docCamara.exists) {
+                    statusDiv.innerHTML = `<span style="color:red;">❌ El documento de la cámara no existe.</span>`;
+                    return;
+                }
+                datosCamaraActual = docCamara.data();
+                actualizarPantalla(idCamara);
+            }, (error) => {
+                console.error("Error en Snapshot Cámara:", error);
+                statusDiv.innerHTML = `<span style="color:red;">❌ Error de Cámara: ${error.message}</span>`;
+            });
+
+            observadorRegistro = db.collection("SesionesCamara").doc(idCamara).collection("RegistroDiario")
+                .orderBy(firebase.firestore.FieldPath.documentId(), "desc")
+                .limit(1)
+                .onSnapshot((querySnapshot) => {
+                    if (!querySnapshot.empty) {
+                        datosRegistroActual = {
+                            id: querySnapshot.docs[0].id,
+                            data: querySnapshot.docs[0].data()
+                        };
+                    } else {
+                        datosRegistroActual = null;
+                    }
+                    actualizarPantalla(idCamara);
+                }, (error) => {
+                    console.error("Error en Snapshot Registro:", error);
+                    statusDiv.innerHTML = `<span style="color:red;">❌ Error de Asistencia: ${error.message}</span>`;
+                });
+        }
+
+        function actualizarPantalla(idCamara) {
+            const statusDiv = document.getElementById('statusConsulta');
+            const contenedorLogs = document.getElementById('contenedorLogs');
+
+            if (!datosCamaraActual) return;
+
+            const dataCamara = datosCamaraActual;
+            let nombreCamara = dataCamara.camara_nombre || idCamara;
+            const cursoAsignado = dataCamara.curso_assigned || idCamara;
+
+            if (nombreCamara.trim().toLowerCase() === "camara desconocida" || nombreCamara.trim().toLowerCase() === "cámara desconocida") {
+                nombreCamara = idCamara;
+            }
+
+            const estaDesconectada =
+                dataCamara.activo === false ||
+                String(dataCamara.activo).toLowerCase() === "false" ||
+                String(dataCamara.estado).toLowerCase() === "desconectada" ||
+                String(dataCamara.estado).toLowerCase() === "inactiva" ||
+                String(dataCamara.estado).toLowerCase() === "apagada" ||
+                String(dataCamara.status).toLowerCase() === "offline";
+
+            let lat = -2.128589, lng = -79.931099;
+            if (dataCamara.ubicacion) {
+                if (typeof dataCamara.ubicacion.latitude === 'number') {
+                    lat = dataCamara.ubicacion.latitude;
+                    lng = dataCamara.ubicacion.longitude;
+                } else if (Array.isArray(dataCamara.ubicacion) && dataCamara.ubicacion.length >= 2) {
+                    lat = Number(dataCamara.ubicacion[0]) || lat;
+                    lng = Number(dataCamara.ubicacion[1]) || lng;
+                }
+            }
+
+            let idRegistro = "N/A";
+            let presentes = 0, ausentes = 0;
+            let totalInfiltrados = 0, totalNoRegistrados = 0;
+            let listaEstudiantesHTML = `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">Sin registros generados hoy.</div>`;
+            let cursoRegistro = cursoAsignado;
+
+            if (datosRegistroActual) {
+                idRegistro = datosRegistroActual.id;
+                const rData = datosRegistroActual.data;
+                presentes = rData.total_presentes || 0;
+                ausentes = rData.total_ausentes || 0;
+                cursoRegistro = rData.curso_assigned_camara || cursoAsignado;
+
+                totalNoRegistrados = rData.total_desconocidos || 0;
+
+                let tempHTML = "";
+                if (rData.lista_presentes && Array.isArray(rData.lista_presentes)) {
+                    rData.lista_presentes.forEach(est => {
+                        const nombre = obtenerNombreEstudiante(est);
+                        tempHTML += `<div class="student-item"><span>👤 ${nombre}</span><span class="badge ok">Presente</span></div>`;
+                    });
+                }
+                if (rData.lista_ausentes && Array.isArray(rData.lista_ausentes)) {
+                    rData.lista_ausentes.forEach(est => {
+                        const nombre = obtenerNombreEstudiante(est);
+                        tempHTML += `<div class="student-item"><span style="color: #64748b;">👤 ${nombre}</span><span class="badge morado">Ausente</span></div>`;
+                    });
+                }
+
+                if (rData.lista_intrusos && Array.isArray(rData.lista_intrusos)) {
+                    rData.lista_intrusos.forEach(est => {
+                        let nombre = "";
+                        let esRegistrado = true;
+
+                        if (typeof est === 'object' && est !== null) {
+                            nombre = est.nombre || est.name || est.alumno || est.id || "";
+                            if (est.registrado === false || est.registered === false || est.en_firebase === false || est.tipo === "desconocido" || est.estado === "no_registrado") {
+                                esRegistrado = false;
+                            }
+                        } else {
+                            nombre = String(est);
+                        }
+
+                        const nombreLower = nombre.toLowerCase().trim();
+                        if (!nombre || nombreLower === "desconocido" || nombreLower === "unknown" || nombreLower === "no registrado" || nombreLower === "n/a" || nombreLower.includes("desconocido") || nombreLower.includes("object")) {
+                            esRegistrado = false;
+                            if (!nombre || nombreLower === "desconocido" || nombreLower === "unknown" || nombreLower.includes("object")) {
+                                nombre = est.id || "Rostro No Reconocido";
+                            }
+                        }
+
+                        if (esRegistrado) {
+                            totalInfiltrados++;
+                        } else {
+                            totalNoRegistrados++;
+                        }
+
+                        const badgeTexto = esRegistrado ? "INFILTRADO" : "NO REGISTRADO";
+                        const badgeEstilo = esRegistrado ? "badge alerta" : "badge amarillo";
+                        const icono = esRegistrado ? "🚨" : "❓";
+
+                        tempHTML += `<div class="student-item" style="border-color: ${esRegistrado ? '#fca5a5' : '#fde68a'};"><span style="color: ${esRegistrado ? '#dc2626' : '#d97706'}; font-weight: bold;">${icono} ${nombre}</span><span class="${badgeEstilo}">${badgeTexto}</span></div>`;
+                    });
+                }
+                if (tempHTML) listaEstudiantesHTML = tempHTML;
+            }
+
+            let badgeClass = "badge ok";
+            let badgeText = "TODO EN ORDEN";
+            let bgHeader = "";
+            let colorTitulo = "";
+
+            if (estaDesconectada) {
+                statusDiv.innerHTML = `🔴 <b>DESACTIVADA:</b> La cámara <b>${nombreCamara}</b> se encuentra fuera de línea.`;
+                badgeClass = "badge offline";
+                badgeText = "DESACTIVADA";
+                bgHeader = "background: #f1f5f9;";
+                colorTitulo = "color: #94a3b8; text-decoration: line-through;";
+            } else {
+                if (datosRegistroActual) {
+                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Sincronizado con <b>${nombreCamara}</b> (Captura: ${idRegistro})`;
+                    if (totalInfiltrados > 0 && totalNoRegistrados > 0) {
+                        badgeClass = "badge alerta";
+                        badgeText = `${totalInfiltrados} INFILTRADO(S) / ${totalNoRegistrados} NO REG.`;
+                        bgHeader = "background: #fef2f2;";
+                        colorTitulo = "color: #dc2626;";
+                    } else if (totalInfiltrados > 0) {
+                        badgeClass = "badge alerta";
+                        badgeText = `${totalInfiltrados} INFILTRADO(S)`;
+                        bgHeader = "background: #fef2f2;";
+                        colorTitulo = "color: #dc2626;";
+                    } else if (totalNoRegistrados > 0) {
+                        badgeClass = "badge amarillo";
+                        badgeText = `${totalNoRegistrados} NO REGISTRADO(S)`;
+                    } else if (ausentes > 0) {
+                        badgeClass = "badge morado";
+                        badgeText = `${ausentes} AUSENTE(S)`;
+                    }
+                } else {
+                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Conectado a <b>${nombreCamara}</b> (Esperando capturas...)`;
+                    badgeClass = "badge amarillo";
+                    badgeText = "ACTIVA SIN REGISTROS";
+                }
+            }
+
+            const contenidoTarjeta = `
+                <div class="log-header" style="${bgHeader}">
+                    <div style="font-weight: 600; ${colorTitulo}">
+                        <span>📷 ${nombreCamara}</span>
+                    </div>
+                    <span class="${badgeClass}">${badgeText}</span>
+                </div>
+                <div class="log-body" style="${estaDesconectada ? 'opacity: 0.55;' : ''}">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 11px;">
+                        <span><b>Captura:</b> ${idRegistro}</span>
+                        <span><b>Curso:</b> ${cursoRegistro}</span>
+                    </div>
+                    
+                    <div class="data-box">
+                        <div style="font-weight: 600; margin-bottom: 6px;">📊 Conteo Real:</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                            <span>🟢 Presentes: <b>${presentes}</b></span>
+                            <span>⚪ Ausentes: <b>${ausentes}</b></span>
+                            <span style="${totalInfiltrados > 0 ? 'color: #dc2626; font-weight: bold;' : ''}">🚨 Infiltrados: <b>${totalInfiltrados}</b></span>
+                            <span style="${totalNoRegistrados > 0 ? 'color: #d97706; font-weight: bold;' : ''}">❓ No Registrados: <b>${totalNoRegistrados}</b></span>
+                        </div>
+                        
+                        <div style="margin-top: 8px; font-weight: 600; border-top: 1px solid var(--borde); padding-top: 6px;">
+                            Lista de Alumnos:
+                        </div>
+                        <div style="max-height: 200px; overflow-y: auto; margin-top: 4px;">
+                            ${listaEstudiantesHTML}
+                        </div>
+                    </div>
+                    <div style="font-size: 10px; color: #64748b; text-align: right; margin-top: 6px;">
+                        📍 Coordenadas: ${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}
+                    </div>
+                </div>
+            `;
+
+            contenedorLogs.innerHTML = `
+                <div id="card-log-${idCamara}" class="log-item">
+                    ${contenidoTarjeta}
+                </div>
+            `;
+
+            if (marcadorActual) mapa.removeLayer(marcadorActual);
+
+            const iconoSeleccionado = estaDesconectada ? iconoApagada : iconoPrendida;
+
+            marcadorActual = L.marker([lat, lng], { icon: iconoSeleccionado }).addTo(mapa)
+                .bindPopup(`<b>${nombreCamara}</b><br>Estado: ${badgeText}`)
+                .openPopup();
+            mapa.setView([lat, lng], 18);
+        }
+
+        // Arrancamos el observador directamente al cargar el HTML
+        window.addEventListener('DOMContentLoaded', iniciarObservadorListaCamaras);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "939488062488",
+    "project_id": "motor-c7e0d",
+    "storage_bucket": "motor-c7e0d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:939488062488:android:d666be0a04cf994b89a76d",
+        "android_client_info": {
+          "package_name": "com.example.control_acceso_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxWlnITnkAFluSG6BUhz4aMZmLXwoMs-U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
