@@ -256,6 +256,14 @@
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
+            <div id="perfil-usuario"
+                style="text-align: right; margin-right: 15px; border-right: 1px solid #e2e8f0; padding-right: 15px;">
+                <div id="user-email" style="font-size: 13px; font-weight: bold; color: #0f172a;">👤 Cargando...</div>
+                <div id="user-role"
+                    style="font-size: 11px; font-weight: 700; color: var(--azul-boton); text-transform: uppercase;">
+                    VERIFICANDO ROL</div>
+            </div>
+
             <div
                 style="font-size: 12px; font-weight: 600; color: #059669; background: #d1fae5; padding: 6px 12px; border-radius: 20px;">
                 ⚡ 100% Sincronizado
@@ -312,6 +320,32 @@
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+
+        // --- PUENTE DE COMUNICACIÓN CON FLUTTER ---
+        // Esta función será ejecutada a la fuerza desde el código Dart
+        function recibirDatosDeFlutter(rol, email) {
+            console.log("⚡ Datos inyectados desde Flutter -> Rol:", rol, "Email:", email);
+
+            document.getElementById('user-email').innerText = "👤 " + (email || "Usuario Activo");
+            document.getElementById('user-role').innerText = "ROL: " + (rol || "No definido");
+
+            // Lógica de restricciones para la Fase 1
+            if (rol === 'Representante') {
+                // Ocultamos el grid principal
+                document.querySelector('.grid-layout').style.display = 'none';
+                // Mostramos un mensaje amigable
+                const mensaje = document.createElement('div');
+                mensaje.innerHTML = `<h2 style="text-align:center; margin-top:50px; color: var(--texto-secundario);">
+                    🔒 Acceso Restringido<br><br>
+                    <span style="font-size:14px; font-weight:normal;">
+                    Los representantes no tienen acceso a la central de monitoreo global.<br>
+                    Próximamente verás aquí únicamente el historial de asistencia de tu representado.
+                    </span>
+                </h2>`;
+                document.body.appendChild(mensaje);
+            }
+            // Si es Administrador, Rector, Inspector o Docente, dejamos que vea el panel normalmente.
+        }
 
         const mapa = L.map('mapa').setView([-2.128589, -79.931099], 18);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(mapa);

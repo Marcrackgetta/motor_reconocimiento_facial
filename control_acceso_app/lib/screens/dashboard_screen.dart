@@ -20,6 +20,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
 
+    // Obtenemos el correo del usuario actual de Firebase
+    final user = FirebaseAuth.instance.currentUser;
+    final userEmail = user?.email ?? "usuario@anai.edu.ec";
+
+    // Test para verificar que el HTML está accesible
     rootBundle
         .loadString('assets/dashboard/index.html')
         .then((value) {
@@ -38,6 +43,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           },
           onPageFinished: (String url) {
             print('Carga exitosa de: $url');
+
+            // 🔥 INYECCIÓN DE DATOS: Mandamos el rol y el correo a la página web
+            _controller.runJavaScript(
+              "recibirDatosDeFlutter('${widget.rol}', '$userEmail');",
+            );
+
             if (mounted) {
               setState(() {
                 _isLoading = false;
@@ -45,7 +56,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             }
           },
           onWebResourceError: (WebResourceError error) {
-            // Esto imprimirá en tu consola exactamente por qué falló
             print('ERROR DEL WEBVIEW: ${error.description}');
             if (mounted) {
               setState(() {

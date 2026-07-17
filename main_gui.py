@@ -7,6 +7,7 @@ from tkinter import ttk, simpledialog, messagebox
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+import src.capture.camera_stream as cs
 
 import platform
 
@@ -680,7 +681,7 @@ class FaceRecognitionGUI:
                     color,
                     2,
                 )
-
+                cs.latest_frame_to_stream = frame
             if self.captured_photos >= MAX_PHOTOS_PER_PERSON:
                 if platform.system() == "Windows":
                     winsound.Beep(1500, 400)
