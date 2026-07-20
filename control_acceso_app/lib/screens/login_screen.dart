@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dashboard_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,8 +14,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _obscurePassword =
-      true; // Variable para controlar la visibilidad de la contraseña
+  bool _obscurePassword = true;
 
   Future<void> _iniciarSesion() async {
     setState(() {
@@ -26,42 +25,45 @@ class _LoginScreenState extends State<LoginScreen> {
     String password = _passwordController.text.trim();
 
     try {
-      // 1. Autenticamos con Firebase Auth
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
+      final response = await http.post(
+        Uri.parse('http://127.0.0.1:8000/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
       );
 
-      // 2. Buscamos el rol del usuario en Firestore
-      QuerySnapshot query = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .where('correo', isEqualTo: email)
-          .get();
-
-      if (query.docs.isNotEmpty) {
-        String rol = query.docs.first['rol'];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        String rol = data['rol'];
+        // String token = data['token']; // Por ahora no guardamos el token localmente
 
         if (mounted) {
-          // Redirigimos al Dashboard y pasamos el rol
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => DashboardScreen(rol: rol)),
+            MaterialPageRoute(
+              builder: (context) => MainScreen(rol: rol, email: email),
+            ),
           );
         }
       } else {
+        String errorMsg = "Verifique sus credenciales";
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData['detail'] != null) errorMsg = errorData['detail'];
+        } catch (_) {}
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Usuario sin rol asignado.')),
+            SnackBar(
+              content: Text('Error al ingresar: $errorMsg'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
-    } on FirebaseAuthException catch (e) {
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            // Ahora usamos 'e' para mostrar el motivo exacto del error
-            content: Text(
-              'Error al ingresar: ${e.message ?? 'Verifique sus credenciales'}',
-            ),
+            content: Text('Error de conexión con el servidor backend: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -104,23 +106,18 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: _passwordController,
-                obscureText:
-                    _obscurePassword, // Vinculamos el texto oculto a la variable
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
-                    // Agregamos el botón del ojito
                     icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility
-                          : Icons.visibility_off,
+                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
                     ),
                     onPressed: () {
                       setState(() {
-                        _obscurePassword =
-                            !_obscurePassword; // Alternamos el estado
+                        _obscurePassword = !_obscurePassword;
                       });
                     },
                   ),
@@ -151,3 +148,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+

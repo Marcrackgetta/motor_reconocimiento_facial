@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart'; // Importante para Firebase
 import 'screens/login_screen.dart';
 
 void main() async {
   // Asegura que los servicios de Flutter estén inicializados antes de correr la app
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Inicializa Firebase para Android/iOS
-  await Firebase.initializeApp();
 
   runApp(const ControlAccesoApp());
 }

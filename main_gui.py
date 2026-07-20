@@ -18,7 +18,7 @@ from pathlib import Path
 
 from src.capture.camera_stream import CameraStream
 from src.storage.file_manager import FileManager
-from src.storage.firebase_manager import FirebaseManager
+from src.storage.api_client import api_client
 from src.utils.config import (
     CAMERA_SOURCES,
     RECONNECT_DELAY_SECONDS,
@@ -33,6 +33,8 @@ from src.vision.tracker import FaceTracker
 from src.vision.recognition_engine import RecognitionEngine
 from src.training.trainer import ModelTrainer
 
+# Usar el cliente API REST en lugar de FirebaseManager directo
+firebase_manager = api_client
 
 class FaceRecognitionGUI:
     def __init__(self, root):
@@ -58,7 +60,7 @@ class FaceRecognitionGUI:
         # Cooldown para registros redundantes en base de datos (10 minutos)
         self.cooldown_seconds = 600
 
-        self.firebase = FirebaseManager()
+        self.firebase = firebase_manager
         self.camera_sessions = {}
 
         self.active_tracks = {i: {} for i in range(len(CAMERA_SOURCES))}
@@ -300,6 +302,17 @@ class FaceRecognitionGUI:
         if not self.running:
             return
 
+        while cs.command_queue:
+            cmd = cs.command_queue.pop(0)
+            if cmd["action"] == "switch":
+                target = cmd["target"]
+                if target == "grid":
+                    self.show_grid_view()
+                elif target.isdigit():
+                    idx = int(target)
+                    if 0 <= idx < len(self.streams):
+                        self.switch_camera(idx)
+
         for i, stream in enumerate(self.streams):
             is_connected = getattr(stream, "is_connected", False)
             session_id = self.camera_sessions[i].get("session_id")
@@ -428,6 +441,9 @@ class FaceRecognitionGUI:
                 )
 
         if display_frame is not None:
+            # Enviamos la misma imagen procesada (con cuadros y grid) al streaming web
+            cs.latest_frame_to_stream = display_frame.copy()
+
             img = Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB))
             lw, lh = (
                 max(10, self.video_label.winfo_width()),
@@ -681,7 +697,6 @@ class FaceRecognitionGUI:
                     color,
                     2,
                 )
-                cs.latest_frame_to_stream = frame
             if self.captured_photos >= MAX_PHOTOS_PER_PERSON:
                 if platform.system() == "Windows":
                     winsound.Beep(1500, 400)
