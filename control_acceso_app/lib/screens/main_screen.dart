@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
-import 'cameras_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 
@@ -32,15 +31,10 @@ class _MainScreenState extends State<MainScreen> {
     final rolLower = widget.rol.toLowerCase();
 
     // Administrador, Rector e Inspector ven todo.
-    // Docente no ve Cámaras.
-    // Representante no ve Dashboard ni Cámaras.
+    // Docente no ve Dashboard.
+    // Representante no ve Dashboard.
 
     final canSeeDashboard = rolLower != 'representante';
-    final canSeeCameras = [
-      'administrador',
-      'rector',
-      'inspector',
-    ].contains(rolLower);
 
     if (canSeeDashboard) {
       _screens.add(DashboardScreen(rol: widget.rol, email: widget.email));
@@ -48,16 +42,6 @@ class _MainScreenState extends State<MainScreen> {
         const BottomNavigationBarItem(
           icon: Icon(Icons.dashboard),
           label: 'Dashboard',
-        ),
-      );
-    }
-
-    if (canSeeCameras) {
-      _screens.add(const CamerasScreen());
-      _navItems.add(
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.videocam),
-          label: 'Cámaras',
         ),
       );
     }

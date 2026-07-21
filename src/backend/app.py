@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 from pydantic import BaseModel
 import requests
 import asyncio
@@ -92,6 +94,9 @@ def login(req: LoginRequest):
 @app.get("/cameras")
 def get_cameras():
     return db_manager.get_cameras()
+
+# --- PROXY ENDPOINTS HACIA EL MOTOR IA ---
+ENGINE_URL = "http://127.0.0.1:5000"
 
 @app.post("/ai/session/start")
 def start_session(req: StartSessionRequest, background_tasks: BackgroundTasks):

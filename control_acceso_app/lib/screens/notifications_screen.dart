@@ -26,7 +26,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _fetchAlertas() async {
     try {
-      final response = await http.get(Uri.parse('http://127.0.0.1:8000/alerts'));
+      final response = await http.get(
+        Uri.parse('http://127.0.0.1:8000/alerts'),
+      );
       if (response.statusCode == 200) {
         if (mounted) {
           setState(() {
@@ -87,7 +89,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             const Icon(Icons.error, color: Colors.red, size: 50),
             const SizedBox(height: 10),
             Text(_error!, style: const TextStyle(color: Colors.red)),
-            ElevatedButton(onPressed: _fetchAlertas, child: const Text("Reintentar"))
+            ElevatedButton(
+              onPressed: _fetchAlertas,
+              child: const Text("Reintentar"),
+            ),
           ],
         ),
       );
@@ -132,17 +137,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             contentPadding: const EdgeInsets.all(16),
             leading: CircleAvatar(
               backgroundColor: Colors.red.shade100,
-              child: const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.red,
-              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
             ),
             title: Text(
               'Alerta en $curso',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8.0),

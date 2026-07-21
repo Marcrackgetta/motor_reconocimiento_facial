@@ -69,6 +69,13 @@ class FaceRecognitionGUI:
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
         self.pan_y = tk.DoubleVar(value=0.0)
+        
+        # PROFILING METRICS
+        self.frame_count = 0
+        self.last_time = time.perf_counter()
+        self.fps = 0.0
+        self.last_det_time = 0.0
+        self.last_rec_time = 0.0
 
         self.root.columnconfigure(0, weight=7)
         self.root.columnconfigure(1, weight=3)
@@ -441,8 +448,23 @@ class FaceRecognitionGUI:
                 )
 
         if display_frame is not None:
-            # Enviamos la misma imagen procesada (con cuadros y grid) al streaming web
-            cs.latest_frame_to_stream = display_frame.copy()
+            # Profiling Overlay
+            self.frame_count += 1
+            now = time.perf_counter()
+            if now - self.last_time >= 1.0:
+                self.fps = self.frame_count / (now - self.last_time)
+                self.frame_count = 0
+                self.last_time = now
+                
+            cv2.putText(
+                display_frame,
+                f"FPS: {self.fps:.1f} | Det: {self.last_det_time*1000:.0f}ms | Rec: {self.last_rec_time*1000:.0f}ms",
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 255),
+                2
+            )
 
             img = Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB))
             lw, lh = (
@@ -453,15 +475,21 @@ class FaceRecognitionGUI:
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
-        self.root.after(16, self.update_frame)
+        self.root.after(1, self.update_frame)
 
     def process_recognition(self, frame, display_frame, stream_idx=None):
         if stream_idx is None:
             stream_idx = self.active_camera_idx
 
+        t0 = time.perf_counter()
         context = self.vision_engine.detect(frame)
+        self.last_det_time = time.perf_counter() - t0
+        
         context = self.trackers[stream_idx].update(context)
+        
+        t1 = time.perf_counter()
         context = self.recognition_engine.process(frame, context, self.vision_engine)
+        self.last_rec_time = time.perf_counter() - t1
 
         session_info = self.camera_sessions.get(stream_idx, {})
         session_id = session_info.get("session_id")

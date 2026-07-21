@@ -1,13 +1,15 @@
 # src/capture/camera_stream.py
+import os
+# Suprimir errores molestos de OpenCV cuando una cámara no está conectada
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+
 import cv2
 import time
 import logging
 import threading
-import os
 from typing import Optional, Union
 import numpy as np
-from flask import Flask, Response, jsonify
-from flask_cors import CORS
 
 # Configurar un límite de espera (timeout) corto para FFMPEG (Cámaras IP)
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000"
@@ -16,45 +18,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# --- CONFIGURACIÓN FLASK ---
-app = Flask(__name__)
-CORS(app) # Permite peticiones desde Flutter Web
-# Esta variable será actualizada desde fuera con el frame actual
-latest_frame_to_stream = None
-command_queue = [] # Cola para recibir comandos desde Flutter
-
-def generate():
-    while True:
-        if latest_frame_to_stream is not None:
-            ret, buffer = cv2.imencode(".jpg", latest_frame_to_stream)
-            frame = buffer.tobytes()
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
-        else:
-            time.sleep(0.1)
-
-@app.route("/video_feed")
-def video_feed():
-    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
-
-@app.route("/cameras_info")
-def cameras_info():
-    from src.utils.config import CAMERA_SOURCES
-    return jsonify([cam.get("curso_asignado", f"Camara {i}") for i, cam in enumerate(CAMERA_SOURCES)])
-
-@app.route("/set_camera/<camera_id>")
-def set_camera(camera_id):
-    command_queue.append({"action": "switch", "target": camera_id})
-    return jsonify({"status": "ok", "target": camera_id})
-
-def run_flask():
-    # Desactivamos logs molestos de werkzeug
-    log = logging.getLogger('werkzeug')
-    log.setLevel(logging.ERROR)
-    app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)
-
-# Lanzamos el servidor en un hilo al importar el módulo
-threading.Thread(target=run_flask, daemon=True).start()
-
+# Ya no se necesita Flask ni variables de streaming web.
+command_queue = [] # Cola de comandos mantenida por compatibilidad
 
 class CameraStream:
     """Clase responsable de gestionar la conexión y extracción asíncrona de video."""

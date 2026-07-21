@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import numpy as np
 import time
+import copy
+import concurrent.futures
 
 from src.vision.frame_context import FrameContext
 from src.vision.vision_engine import VisionEngine
@@ -9,9 +11,8 @@ from src.vision.vision_engine import VisionEngine
 
 class RecognitionEngine:
     """
-    Motor de reconocimiento impulsado por caché asíncrona.
-    Evita caídas de FPS limitando las extracciones pesadas a 1 por frame
-    y soluciona los cruces de identidad re-validando periódicamente.
+    Motor de reconocimiento impulsado por caché asíncrona y extracción en background.
+    Evita caídas de FPS delegando las extracciones pesadas a un hilo secundario.
     """
 
     def __init__(
@@ -28,6 +29,10 @@ class RecognitionEngine:
 
         self.track_cache: Dict[int, Dict[str, Any]] = {}
         self.cache_ttl = 1000
+        
+        # Ejecutor para extracción asíncrona de embeddings (1 worker es suficiente para no saturar CPU)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.pending_extractions = set()
 
     @staticmethod
     def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -35,6 +40,48 @@ class RecognitionEngine:
         if denom == 0:
             return 0.0
         return float(np.dot(emb1, emb2) / denom)
+
+    def _async_extract_and_match(self, frame, face, track_id, vision_engine):
+        try:
+            vision_engine.extract_embedding(frame, face)
+            current_time = time.time()
+            
+            if face.embedding is None:
+                prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
+                self.track_cache[track_id] = {
+                    "identity": "Desconocido",
+                    "confidence": 0.0,
+                    "last_validation": current_time,
+                    "attempts": prev_attempts + 1,
+                }
+                return
+
+            best_similarity = -1.0
+            best_index = -1
+
+            for i, known_embedding in enumerate(self.known_encodings):
+                similarity = self.cosine_similarity(face.embedding, known_embedding)
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_index = i
+
+            is_recognized = best_index >= 0 and best_similarity >= self.threshold
+            identity = self.known_names[best_index] if is_recognized else "Desconocido"
+            confidence = round(best_similarity * 100, 2)
+
+            prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
+            new_attempts = prev_attempts + 1 if not is_recognized else 0
+
+            self.track_cache[track_id] = {
+                "identity": identity,
+                "confidence": confidence,
+                "last_validation": current_time,
+                "attempts": new_attempts,
+            }
+        except Exception as e:
+            print(f"[Error Recognition Background] {e}")
+        finally:
+            self.pending_extractions.discard(track_id)
 
     def process(
         self, frame: np.ndarray, context: FrameContext, vision_engine: VisionEngine
@@ -44,9 +91,6 @@ class RecognitionEngine:
             return context
 
         current_time = time.time()
-
-        # Bandera para limitar el estrés de la CPU. Solo permitimos 1 extracción pesada por frame.
-        extraction_done_this_frame = False
 
         for face in context.faces:
             raw_track_id = getattr(face, "track_id", None)
@@ -61,94 +105,50 @@ class RecognitionEngine:
             if track_id in self.track_cache:
                 cached = self.track_cache[track_id]
                 time_since_validation = current_time - cached.get("last_validation", 0)
-                # Modificación: Recuperar intentos previos (si no existe, empezamos en 1)
                 attempts = cached.get("attempts", 1)
 
                 if cached["identity"] != "Desconocido":
-                    # Si es conocido, re-validar cada 3.0 segundos para corregir errores del tracker por oclusión
                     if time_since_validation > 3.0:
                         needs_extraction = True
                     else:
                         use_cache = True
                 else:
-                    # Modificación: Enfriamiento progresivo. 1.5s rápido, luego 10s.
                     cooldown = 1.5 if attempts <= 2 else 10.0
                     if time_since_validation > cooldown:
                         needs_extraction = True
                     else:
                         use_cache = True
             else:
-                # Rostro completamente nuevo para el tracker
                 needs_extraction = True
 
-            # Si necesitamos extraer pero la CPU ya hizo una extracción en este frame,
-            # posponemos la extracción para el siguiente frame y usamos la caché temporalmente.
-            if (
-                needs_extraction
-                and extraction_done_this_frame
-                and track_id in self.track_cache
-            ):
-                needs_extraction = False
-                use_cache = True
+            # Si necesitamos extracción, la mandamos a background
+            if needs_extraction:
+                if track_id not in self.pending_extractions:
+                    self.pending_extractions.add(track_id)
+                    
+                    # Copiamos frame y face para aislar la memoria del hilo secundario
+                    frame_copy = frame.copy()
+                    face_copy = copy.copy(face)
+                    
+                    self.executor.submit(
+                        self._async_extract_and_match, 
+                        frame_copy, face_copy, track_id, vision_engine
+                    )
+                
+                # Mientras se extrae, usamos caché si hay, si no "Desconocido"
+                if track_id in self.track_cache:
+                    use_cache = True
+                else:
+                    face.identity = "Calculando..."
+                    face.confidence = 0.0
+                    face.recognition_state = "PROCESSING"
 
-            if use_cache and not needs_extraction:
+            if use_cache:
                 face.identity = self.track_cache[track_id]["identity"]
                 face.confidence = self.track_cache[track_id]["confidence"]
                 face.recognition_state = (
                     "RECOGNIZED" if face.identity != "Desconocido" else "UNKNOWN"
                 )
-                continue
-
-            # ==========================================
-            # EXTRACCIÓN PESADA NEURONAL
-            # ==========================================
-            vision_engine.extract_embedding(frame, face)
-            extraction_done_this_frame = (
-                True  # Bloqueamos más extracciones en este frame
-            )
-
-            if face.embedding is None:
-                # Modificación: Si falla la extracción, igual sumamos un intento
-                prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
-                self.track_cache[track_id] = {
-                    "identity": "Desconocido",
-                    "confidence": 0.0,
-                    "last_validation": current_time,
-                    "attempts": prev_attempts + 1,
-                }
-                face.identity = "Desconocido"
-                face.confidence = 0.0
-                face.recognition_state = "UNKNOWN"
-                continue
-
-            best_similarity = -1.0
-            best_index = -1
-
-            for i, known_embedding in enumerate(self.known_encodings):
-                similarity = self.cosine_similarity(face.embedding, known_embedding)
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_index = i
-
-            is_recognized = best_index >= 0 and best_similarity >= self.threshold
-
-            face.identity = (
-                self.known_names[best_index] if is_recognized else "Desconocido"
-            )
-            face.confidence = round(best_similarity * 100, 2)
-            face.recognition_state = "RECOGNIZED" if is_recognized else "UNKNOWN"
-
-            # Modificación: Recuperar intentos previos y sumar 1 si sigue siendo desconocido (o resetear a 0)
-            prev_attempts = self.track_cache.get(track_id, {}).get("attempts", 0)
-            new_attempts = prev_attempts + 1 if not is_recognized else 0
-
-            # GUARDAR EN CACHÉ (Actualizando timestamp de validación e intentos)
-            self.track_cache[track_id] = {
-                "identity": face.identity,
-                "confidence": face.confidence,
-                "last_validation": current_time,
-                "attempts": new_attempts,
-            }
 
         # Purga de memoria para evitar saturación
         if len(self.track_cache) > self.cache_ttl:

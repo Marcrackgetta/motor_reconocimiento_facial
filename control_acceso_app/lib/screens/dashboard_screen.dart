@@ -30,7 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _channel = WebSocketChannel.connect(
         Uri.parse('ws://127.0.0.1:8000/ws/dashboard'),
       );
-      
+
       _channel!.stream.listen(
         (message) {
           final data = jsonDecode(message);
@@ -55,16 +55,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _handleWebSocketMessage(Map<String, dynamic> message) {
     if (!mounted) return;
-    
+
     setState(() {
       if (message['type'] == 'SESSION_STARTED') {
         _activeSessionId = message['session_id'];
         _cameraInfo = message['camara_info']?['curso_asignado'] ?? "General";
         _latestData = {};
       } else if (message['type'] == 'DETECTION_UPDATED') {
-        if (_activeSessionId.isEmpty || _activeSessionId == message['session_id']) {
-           _activeSessionId = message['session_id'];
-           _latestData = message['data'] ?? {};
+        if (_activeSessionId.isEmpty ||
+            _activeSessionId == message['session_id']) {
+          _activeSessionId = message['session_id'];
+          _latestData = message['data'] ?? {};
         }
       } else if (message['type'] == 'SESSION_ENDED') {
         if (_activeSessionId == message['session_id']) {
@@ -93,7 +94,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
             Text(
               count.toString(),
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
           ],
         ),
@@ -107,7 +112,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text("Acceso Restringido")),
         body: const Center(
-          child: Text("Los representantes no tienen acceso a la central de monitoreo."),
+          child: Text(
+            "Los representantes no tienen acceso a la central de monitoreo.",
+          ),
         ),
       );
     }
@@ -122,7 +129,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text('HQ Central - ${widget.rol}', style: const TextStyle(color: Colors.white)),
+        title: Text(
+          'HQ Central - ${widget.rol}',
+          style: const TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.blue.shade900,
         actions: [
           Padding(
@@ -134,11 +144,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: _isConnected ? Colors.greenAccent : Colors.redAccent,
                 ),
                 const SizedBox(width: 8),
-                Text(_isConnected ? "EN VIVO" : "DESCONECTADO", 
-                     style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  _isConnected ? "EN VIVO" : "DESCONECTADO",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
       body: Padding(
@@ -158,19 +170,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Cámara Activa (Transmisión IA)", style: TextStyle(color: Colors.grey)),
-                          Text(_cameraInfo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                          const Text(
+                            "Cámara Activa (Transmisión IA)",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          Text(
+                            _cameraInfo,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     if (_activeSessionId.isNotEmpty)
                       Chip(
-                        backgroundColor: intrusos > 0 ? Colors.red.shade100 : Colors.green.shade100,
+                        backgroundColor: intrusos > 0
+                            ? Colors.red.shade100
+                            : Colors.green.shade100,
                         label: Text(
                           intrusos > 0 ? "¡ALERTA INTRUSOS!" : "TODO EN ORDEN",
-                          style: TextStyle(color: intrusos > 0 ? Colors.red.shade900 : Colors.green.shade900, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: intrusos > 0
+                                ? Colors.red.shade900
+                                : Colors.green.shade900,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      )
+                      ),
                   ],
                 ),
               ),
@@ -179,18 +207,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                Expanded(child: _buildStatCard("Presentes", presentes, Colors.green, Icons.check_circle)),
-                Expanded(child: _buildStatCard("Ausentes", ausentes, Colors.purple, Icons.watch_later)),
-                Expanded(child: _buildStatCard("Infiltrados", intrusos, Colors.red, Icons.warning)),
-                Expanded(child: _buildStatCard("No Registrados", desconocidos, Colors.orange, Icons.help)),
+                Expanded(
+                  child: _buildStatCard(
+                    "Presentes",
+                    presentes,
+                    Colors.green,
+                    Icons.check_circle,
+                  ),
+                ),
+                Expanded(
+                  child: _buildStatCard(
+                    "Ausentes",
+                    ausentes,
+                    Colors.purple,
+                    Icons.watch_later,
+                  ),
+                ),
+                Expanded(
+                  child: _buildStatCard(
+                    "Infiltrados",
+                    intrusos,
+                    Colors.red,
+                    Icons.warning,
+                  ),
+                ),
+                Expanded(
+                  child: _buildStatCard(
+                    "No Registrados",
+                    desconocidos,
+                    Colors.orange,
+                    Icons.help,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
-            const Text("🚨 Historial de Infiltrados (Tiempo Real)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "🚨 Historial de Infiltrados (Tiempo Real)",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Expanded(
               child: listaIntrusos.isEmpty
-                  ? const Center(child: Text("No se han detectado intrusos en esta sesión.", style: TextStyle(color: Colors.grey)))
+                  ? const Center(
+                      child: Text(
+                        "No se han detectado intrusos en esta sesión.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
                   : ListView.builder(
                       itemCount: listaIntrusos.length,
                       itemBuilder: (context, index) {
@@ -200,10 +264,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         return Card(
                           color: Colors.red.shade50,
                           child: ListTile(
-                            leading: const Icon(Icons.warning, color: Colors.red),
-                            title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text("Permanencia en área: ${(duracion as num).toStringAsFixed(1)}s"),
-                            trailing: const Text("INFILTRADO", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                            leading: const Icon(
+                              Icons.warning,
+                              color: Colors.red,
+                            ),
+                            title: Text(
+                              nombre,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            subtitle: Text(
+                              "Permanencia en área: ${(duracion as num).toStringAsFixed(1)}s",
+                            ),
+                            trailing: const Text(
+                              "INFILTRADO",
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         );
                       },
