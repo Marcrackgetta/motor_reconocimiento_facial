@@ -4,18 +4,21 @@ CAMERA_SOURCES = [
     {
         "src": 0,
         "curso_asignado": "2_INFO_B_MAT",
+        "tipo": "AULA",
         "lat": -0.220000,
         "lon": -78.511944,
     },
     {
         "src": 1,
         "curso_asignado": "3_CC_A_Mat",
+        "tipo": "ENTRADA",
         "lat": -2.129581,
         "lon": -79.931084,
     },
     {
         "src": 2,
         "curso_asignado": "3_CONT_A_Mat",
+        "tipo": "SALIDA",
         "lat": -2.128720,
         "lon": -79.931061,
     },

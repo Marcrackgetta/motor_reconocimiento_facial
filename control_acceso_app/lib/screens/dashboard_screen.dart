@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String rol;
@@ -18,6 +20,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _latestData = {};
   String _activeSessionId = "";
   String _cameraInfo = "Esperando conexión...";
+  
+  double _camLat = -2.128589;
+  double _camLng = -79.931099;
+  final MapController _mapController = MapController();
 
   @override
   void initState() {
@@ -59,7 +65,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       if (message['type'] == 'SESSION_STARTED') {
         _activeSessionId = message['session_id'];
-        _cameraInfo = message['camara_info']?['curso_asignado'] ?? "General";
+        final camInfo = message['camara_info'] ?? {};
+        _cameraInfo = camInfo['curso_asignado'] ?? "General";
+        
+        if (camInfo['ubicacion'] != null) {
+          if (camInfo['ubicacion']['latitude'] != null) {
+            _camLat = (camInfo['ubicacion']['latitude'] as num).toDouble();
+            _camLng = (camInfo['ubicacion']['longitude'] as num).toDouble();
+          } else if (camInfo['ubicacion'] is List && camInfo['ubicacion'].length >= 2) {
+             _camLat = (camInfo['ubicacion'][0] as num).toDouble();
+             _camLng = (camInfo['ubicacion'][1] as num).toDouble();
+          }
+        }
+        
+        // Mover el mapa a la ubicación de la cámara si ya está listo
+        try {
+           _mapController.move(LatLng(_camLat, _camLng), 18);
+        } catch (e) {}
+
         _latestData = {};
       } else if (message['type'] == 'DETECTION_UPDATED') {
         if (_activeSessionId.isEmpty ||
@@ -242,52 +265,130 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            const Text(
-              "🚨 Historial de Infiltrados (Tiempo Real)",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
             Expanded(
-              child: listaIntrusos.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No se han detectado intrusos en esta sesión.",
-                        style: TextStyle(color: Colors.grey),
+              child: Row(
+                children: [
+                  // --- MAPA LEAFLET ---
+                  Expanded(
+                    flex: 2,
+                    child: Card(
+                      clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    )
-                  : ListView.builder(
-                      itemCount: listaIntrusos.length,
-                      itemBuilder: (context, index) {
-                        final intru = listaIntrusos[index];
-                        final nombre = intru['nombre'] ?? 'Desconocido';
-                        final duracion = intru['duracion_segundos'] ?? 0.0;
-                        return Card(
-                          color: Colors.red.shade50,
-                          child: ListTile(
-                            leading: const Icon(
-                              Icons.warning,
-                              color: Colors.red,
+                      child: Stack(
+                        children: [
+                          FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              center: LatLng(_camLat, _camLng),
+                              zoom: 18.0,
                             ),
-                            title: Text(
-                              nombre,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                            children: [
+                              TileLayer(
+                                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                                subdomains: const ['a', 'b', 'c'],
                               ),
-                            ),
-                            subtitle: Text(
-                              "Permanencia en área: ${(duracion as num).toStringAsFixed(1)}s",
-                            ),
-                            trailing: const Text(
-                              "INFILTRADO",
-                              style: TextStyle(
-                                color: Colors.red,
-                                fontWeight: FontWeight.bold,
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(_camLat, _camLng),
+                                    width: 40,
+                                    height: 40,
+                                    builder: (ctx) => Icon(
+                                      Icons.location_on,
+                                      color: _activeSessionId.isEmpty ? Colors.grey : (intrusos > 0 ? Colors.red : Colors.green),
+                                      size: 40,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                "Ubicación de Cámara",
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
+                  ),
+                  const SizedBox(width: 16),
+                  
+                  // --- HISTORIAL DE INFILTRADOS ---
+                  Expanded(
+                    flex: 1,
+                    child: Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "🚨 Infiltrados (Tiempo Real)",
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: listaIntrusos.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        "No se han detectado intrusos.",
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      itemCount: listaIntrusos.length,
+                                      itemBuilder: (context, index) {
+                                        final intru = listaIntrusos[index];
+                                        final nombre = intru['nombre'] ?? 'Desconocido';
+                                        final duracion = intru['duracion_segundos'] ?? 0.0;
+                                        return Card(
+                                          color: Colors.red.shade50,
+                                          margin: const EdgeInsets.symmetric(vertical: 4),
+                                          child: ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            leading: const Icon(
+                                              Icons.warning,
+                                              color: Colors.red,
+                                            ),
+                                            title: Text(
+                                              nombre,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              "Tiempo: ${(duracion as num).toStringAsFixed(1)}s",
+                                              style: const TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

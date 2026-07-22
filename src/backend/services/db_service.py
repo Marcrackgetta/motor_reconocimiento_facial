@@ -159,8 +159,9 @@ class DatabaseManager:
             return None
 
         # Procesar evento de la Fase 1.5
+        nuevo_evento = None
         try:
-            self._procesar_evento_estudiante(identidad, estado, camara_info)
+            nuevo_evento = self._procesar_evento_estudiante(identidad, estado, camara_info)
         except Exception as e:
             logging.error(f"Error procesando evento 1.5: {e}")
 
@@ -248,9 +249,9 @@ class DatabaseManager:
 
             if actualizado or not doc.exists:
                 doc_ref.set(data)
-                return {"id": sub_doc_id, "data": data}
+                return {"id": sub_doc_id, "data": data, "nuevo_evento": nuevo_evento}
 
-            return None
+            return {"id": sub_doc_id, "data": data, "nuevo_evento": nuevo_evento} if nuevo_evento else None
 
         except Exception as e:
             logging.error(f"Error al inyectar detección en asistencia: {e}")
@@ -313,7 +314,7 @@ class DatabaseManager:
 
         if tipo_evento:
             evento_ref = self.db.collection("Eventos").document()
-            evento_ref.set({
+            evento_dict = {
                 "estudiante_id": estudiante_id,
                 "tipo_evento": tipo_evento,
                 "camara_curso": curso_actual,
@@ -321,11 +322,15 @@ class DatabaseManager:
                 "alerta_enviada": False,
                 "nombre": nombre_limpio,
                 "curso_origen": curso_limpio
-            })
+            }
+            evento_ref.set(evento_dict)
             estudiante_ref.update({
                 "estado_actual": nuevo_estado,
                 "ultimo_evento_id": evento_ref.id
             })
+            return evento_dict
+            
+        return None
 
     def actualizar_duracion_intruso(self, session_id, doc_id, duracion, identidad=None):
         if not self.db or not session_id or not doc_id or not identidad:
@@ -360,10 +365,17 @@ class DatabaseManager:
         return None
 
     def verificar_regla_10_minutos(self):
+        alertas_generadas = []
         if not self.db:
-            return
+            return alertas_generadas
             
         try:
+            # Obtener configuración global
+            tiempo_limite = 600
+            conf_doc = self.db.collection("Configuracion").document("global").get()
+            if conf_doc.exists:
+                tiempo_limite = conf_doc.to_dict().get("regla_10_minutos_segundos", 600)
+                
             estudiantes = self.db.collection("Estudiantes").where("estado_actual", "==", "CURSO_DIFERENTE").get()
             
             for est_doc in estudiantes:
@@ -382,15 +394,25 @@ class DatabaseManager:
                         if fecha_str:
                             fecha_evento = datetime.fromisoformat(fecha_str)
                             diferencia = datetime.now() - fecha_evento
-                            # Test rule: changed to 30 seconds for easier testing or just 600
-                            # Wait, the instruction said 10 minutes (600s), but maybe we can just set it to 600
-                            if diferencia.total_seconds() > 600:
+                            # Uso del tiempo configurado
+                            if diferencia.total_seconds() > tiempo_limite:
                                 evento_ref.update({"alerta_enviada": True})
-                                logging.info(f"ALERTA: Estudiante {est.get('nombre')} lleva más de 10 minutos fuera.")
-                                # Crear la notificación para flutter (mock o directa)
-                                pass
+                                logging.info(f"ALERTA: Estudiante {est.get('nombre')} lleva más de {tiempo_limite} segundos fuera.")
+                                alerta = {
+                                    "estudiante_id": est_doc.id,
+                                    "nombre": est.get('nombre'),
+                                    "curso_origen": est.get('curso_origen'),
+                                    "curso_detectado": est.get('curso_detectado'),
+                                    "tiempo_fuera_segundos": diferencia.total_seconds()
+                                }
+                                alertas_generadas.append(alerta)
         except Exception as e:
             logging.error(f"Error evaluando regla de 10 minutos: {e}")
+            
+        return alertas_generadas
+        
+    def cerrar_sesion_camara(self, session_id, avg_fps=0.0):
+        if not self.db or not session_id:
             return
         try:
             self.db.collection("SesionesCamara").document(session_id).update(

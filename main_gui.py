@@ -526,9 +526,9 @@ class FaceRecognitionGUI:
                 if curso_actual_norm == "" or curso_actual_norm in ident_norm:
                     is_valid = True
                 else:
-                    partes = identity.rsplit("_", 1)
-                    if len(partes) == 2:
-                        curso_reg_norm = partes[0].lower().replace("_", " ").strip()
+                    partes = identity.split("_")
+                    if len(partes) > 2:
+                        curso_reg_norm = " ".join(partes[:-2]).lower().strip()
                         if curso_reg_norm and (
                             curso_reg_norm in curso_actual_norm
                             or curso_actual_norm in curso_reg_norm
@@ -631,7 +631,7 @@ class FaceRecognitionGUI:
                 color,
                 2,
             )
-            partes = identity.split()
+            partes = identity.split("_")
             if len(partes) >= 2:
                 nombre_mostrar = " ".join(partes[-2:])
             else:

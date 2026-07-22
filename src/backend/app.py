@@ -44,6 +44,19 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+async def evaluador_10_minutos():
+    while True:
+        try:
+            db_manager.verificar_regla_10_minutos()
+        except Exception as e:
+            pass
+        await asyncio.sleep(60)
+
+@app.on_event("startup")
+async def startup_event():
+    manager.reset_camera_states()
+    asyncio.create_task(evaluador_10_minutos())
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -94,6 +107,10 @@ def login(req: LoginRequest):
 @app.get("/cameras")
 def get_cameras():
     return db_manager.get_cameras()
+
+@app.get("/students/me")
+def get_my_students(email: str):
+    return db_manager.get_students_for_representative(email)
 
 # --- PROXY ENDPOINTS HACIA EL MOTOR IA ---
 ENGINE_URL = "http://127.0.0.1:5000"

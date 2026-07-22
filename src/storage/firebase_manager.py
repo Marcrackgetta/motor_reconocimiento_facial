@@ -52,7 +52,7 @@ class FirebaseManager:
         if not identity or identity in ["Desconocido", "Calculando..."]:
             return identity, "Desconocido"
 
-        partes = identity.split()  # Separa por espacios
+        partes = identity.split("_")
         if len(partes) >= 2:
             # Toma estrictamente las dos ÚLTIMAS palabras como Nombre y Apellido
             nombre_limpio = " ".join(partes[-2:])
