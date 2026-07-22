@@ -27,7 +27,9 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             # Registrar en DB
             if db_manager.db:
                 try:
-                    db_manager.db.collection("AuditLogs").add({
+                    doc_ref = db_manager.db.collection("AuditLogs").document()
+                    doc_ref.set({
+                        "id": doc_ref.id,
                         "timestamp": datetime.now().isoformat(),
                         "method": method,
                         "path": path,

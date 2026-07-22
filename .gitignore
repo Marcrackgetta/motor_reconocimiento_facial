@@ -19,3 +19,5 @@ data/models/*
 Thumbs.db
 
 credenciales.json
+.env
+*.env

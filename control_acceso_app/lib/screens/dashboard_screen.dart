@@ -3,6 +3,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../config/api_config.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String rol;
@@ -34,7 +35,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _connectWebSocket() {
     try {
       _channel = WebSocketChannel.connect(
-        Uri.parse('ws://127.0.0.1:8000/ws/dashboard'),
+        Uri.parse('${ApiConfig.wsUrl}/ws/dashboard'),
       );
 
       _channel!.stream.listen(

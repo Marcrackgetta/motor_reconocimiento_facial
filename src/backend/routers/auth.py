@@ -1,3 +1,4 @@
+import os
 import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -5,7 +6,7 @@ from src.backend.services.db_service import db_manager
 
 router = APIRouter()
 
-FIREBASE_WEB_API_KEY = "AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU"
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU")
 
 class LoginRequest(BaseModel):
     email: str

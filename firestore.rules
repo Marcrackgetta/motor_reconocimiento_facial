@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función auxiliar: verifica si el usuario está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Colección de Usuarios
+    match /usuarios/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth.token.role == 'admin';
+    }
+
+    // Colección de Estudiantes
+    match /Estudiantes/{studentId} {
+      allow read: if isAuthenticated() && (
+        request.auth.token.email in resource.data.representantes ||
+        request.auth.token.role in ['admin', 'rector', "inspector"]
+      );
+      allow write: if request.auth.token.role == 'admin';
+    }
+
+    // Colección de Eventos e Historial
+    match /Eventos/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth.token.role in ['admin', 'engine'];
+    }
+
+    // Colección de Sesiones de Cámara y Asistencia Diaria
+    match /SesionesCamara/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth.token.role in ['admin', 'engine'];
+    }
+
+    // Colección de Alertas
+    match /Alertas/{alertId} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth.token.role in ['admin', 'engine'];
+    }
+  }
+}

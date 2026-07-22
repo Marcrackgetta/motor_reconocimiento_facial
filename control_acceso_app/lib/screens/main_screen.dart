@@ -57,7 +57,7 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     // Todos ven Notificaciones y Perfil
-    _screens.add(const NotificationsScreen());
+    _screens.add(NotificationsScreen(email: widget.email));
     _navItems.add(
       const BottomNavigationBarItem(
         icon: Icon(Icons.notifications),

@@ -14,26 +14,20 @@ class APIClient:
             logging.error(f"Error llamando asíncronamente a {url}: {e}")
 
     def forzar_reseteo_camaras(self, camera_sources):
-        pass
+        payload = {"camera_sources": camera_sources}
+        self.executor.submit(self._post_async, f"{self.base_url}/ai/cameras/reset", payload)
 
     def iniciar_sesion_camara(self, camara_info, known_names=None):
-        # Para inicio de sesión podríamos necesitar el session_id sincrónicamente, pero
-        # podemos generar uno localmente o dejar que el servidor lo asigne asíncronamente.
-        # En el código original retorna el session_id. Si esto se necesita, debe ser síncrono.
-        # Revisemos main_gui.py: `new_session_id = self.firebase.iniciar_sesion_camara(...)`
-        # Dado que se usa de inmediato, lo dejamos síncrono, ya que solo ocurre al iniciar la cámara (1 vez).
-        try:
-            payload = {
-                "camara_info": camara_info,
-                "known_names": known_names or []
-            }
-            res = requests.post(f"{self.base_url}/ai/session/start", json=payload, timeout=2)
-            if res.status_code == 200:
-                return res.json().get("session_id")
-        except Exception as e:
-            logging.error(f"Error llamando a /ai/session/start: {e}")
-        import uuid
-        return f"local_{uuid.uuid4().hex}"
+        # Generar session_id de inmediato para no bloquear el hilo de interfaz/visión
+        curso_actual = camara_info.get("curso_asignado", "General")
+        session_id = curso_actual.strip().replace(" ", "_")
+        
+        payload = {
+            "camara_info": camara_info,
+            "known_names": known_names or []
+        }
+        self.executor.submit(self._post_async, f"{self.base_url}/ai/session/start", payload)
+        return session_id
 
     def registrar_deteccion(self, session_id, identidad, estado, confianza, camara_info, custom_doc_id=None, known_names=None):
         # Esta función originalmente retorna un doc_id, pero al guardar intrusos asíncronamente, 

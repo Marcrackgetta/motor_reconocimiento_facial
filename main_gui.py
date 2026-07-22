@@ -65,6 +65,8 @@ class FaceRecognitionGUI:
 
         self.active_tracks = {i: {} for i in range(len(CAMERA_SOURCES))}
         self.db_cooldowns = {i: {} for i in range(len(CAMERA_SOURCES))}
+        self.last_frame_ids = {i: -1 for i in range(len(CAMERA_SOURCES))}
+        self.cached_display_frames = {i: None for i in range(len(CAMERA_SOURCES))}
 
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
@@ -347,54 +349,61 @@ class FaceRecognitionGUI:
         display_frame = None
 
         if self.view_mode == "SINGLE":
-            stream = self.streams[self.active_camera_idx]
-            frame = None
+            stream_idx = self.active_camera_idx
+            stream = self.streams[stream_idx]
+            frame, frame_id = None, 0
             try:
-                frame = stream.get_frame()
+                frame, frame_id = stream.get_frame_with_id()
             except Exception:
                 pass
 
             if getattr(stream, "is_connected", True) and frame is not None:
-                z = self.zoom_factor.get()
-                if z > 1.0:
-                    h, w = frame.shape[:2]
-                    new_h, new_w = int(h / z), int(w / z)
-                    max_shift_x, max_shift_y = w - new_w, h - new_h
-                    x1 = max(
-                        0,
-                        min(
-                            int(max_shift_x * ((self.pan_x.get() + 1.0) / 2.0)),
-                            max_shift_x,
-                        ),
-                    )
-                    y1 = max(
-                        0,
-                        min(
-                            int(max_shift_y * ((self.pan_y.get() + 1.0) / 2.0)),
-                            max_shift_y,
-                        ),
-                    )
-                    frame = cv2.resize(
-                        frame[y1 : y1 + new_h, x1 : x1 + new_w],
-                        (w, h),
-                        interpolation=cv2.INTER_LINEAR,
-                    )
+                # Evitar re-procesamiento innecesario si el frame no ha cambiado
+                if frame_id == self.last_frame_ids[stream_idx] and self.cached_display_frames[stream_idx] is not None:
+                    display_frame = self.cached_display_frames[stream_idx].copy()
+                else:
+                    self.last_frame_ids[stream_idx] = frame_id
+                    z = self.zoom_factor.get()
+                    if z > 1.0:
+                        h, w = frame.shape[:2]
+                        new_h, new_w = int(h / z), int(w / z)
+                        max_shift_x, max_shift_y = w - new_w, h - new_h
+                        x1 = max(
+                            0,
+                            min(
+                                int(max_shift_x * ((self.pan_x.get() + 1.0) / 2.0)),
+                                max_shift_x,
+                            ),
+                        )
+                        y1 = max(
+                            0,
+                            min(
+                                int(max_shift_y * ((self.pan_y.get() + 1.0) / 2.0)),
+                                max_shift_y,
+                            ),
+                        )
+                        frame = cv2.resize(
+                            frame[y1 : y1 + new_h, x1 : x1 + new_w],
+                            (w, h),
+                            interpolation=cv2.INTER_LINEAR,
+                        )
 
-                display_frame = frame.copy()
-                if self.mode == "RECOGNIZE":
-                    display_frame = self.process_recognition(frame, display_frame)
-                elif self.mode == "REGISTER":
-                    display_frame = self.process_registration(frame, display_frame)
-                elif self.mode == "TRAINING":
-                    cv2.putText(
-                        display_frame,
-                        "Entrenando modelo... Por favor espere",
-                        (50, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
-                        (0, 165, 255),
-                        2,
-                    )
+                    display_frame = frame.copy()
+                    if self.mode == "RECOGNIZE":
+                        display_frame = self.process_recognition(frame, display_frame)
+                    elif self.mode == "REGISTER":
+                        display_frame = self.process_registration(frame, display_frame)
+                    elif self.mode == "TRAINING":
+                        cv2.putText(
+                            display_frame,
+                            "Entrenando modelo... Por favor espere",
+                            (50, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8,
+                            (0, 165, 255),
+                            2,
+                        )
+                    self.cached_display_frames[stream_idx] = display_frame.copy()
             else:
                 display_frame = self.create_connection_lost_frame()
 
@@ -402,21 +411,26 @@ class FaceRecognitionGUI:
             frames = []
             target_w, target_h = 320, 240
             for i, stream in enumerate(self.streams):
-                f = None
+                f, f_id = None, 0
                 try:
-                    f = stream.get_frame()
+                    f, f_id = stream.get_frame_with_id()
                 except Exception:
                     pass
 
                 if f is not None and getattr(stream, "is_connected", True):
-                    proc_frame = f.copy()
-                    if self.mode == "RECOGNIZE":
-                        proc_frame = self.process_recognition(
-                            f, proc_frame, stream_idx=i
-                        )
-                    elif self.mode == "REGISTER":
-                        proc_frame = self.process_registration(f, proc_frame)
-                    frames.append(cv2.resize(proc_frame, (target_w, target_h)))
+                    if f_id == self.last_frame_ids[i] and self.cached_display_frames[i] is not None:
+                        proc_frame = self.cached_display_frames[i].copy()
+                    else:
+                        self.last_frame_ids[i] = f_id
+                        proc_frame = f.copy()
+                        if self.mode == "RECOGNIZE":
+                            proc_frame = self.process_recognition(
+                                f, proc_frame, stream_idx=i
+                            )
+                        elif self.mode == "REGISTER":
+                            proc_frame = self.process_registration(f, proc_frame)
+                        self.cached_display_frames[i] = proc_frame.copy()
+                    frames.append(cv2.resize(proc_frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR))
                 else:
                     blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
                     cv2.putText(
@@ -466,16 +480,15 @@ class FaceRecognitionGUI:
                 2
             )
 
-            img = Image.fromarray(cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB))
-            lw, lh = (
-                max(10, self.video_label.winfo_width()),
-                max(10, self.video_label.winfo_height()),
-            )
-            img.thumbnail((lw, lh), Image.Resampling.LANCZOS)
+            lw = max(10, self.video_label.winfo_width())
+            lh = max(10, self.video_label.winfo_height())
+            resized_bgr = cv2.resize(display_frame, (lw, lh), interpolation=cv2.INTER_LINEAR)
+            img_rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(img_rgb)
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
-        self.root.after(1, self.update_frame)
+        self.root.after(30, self.update_frame)
 
     def process_recognition(self, frame, display_frame, stream_idx=None):
         if stream_idx is None:
