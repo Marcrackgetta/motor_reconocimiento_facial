@@ -23,8 +23,16 @@ class IntruderDurationRequest(BaseModel):
     duracion: float
     identidad: str
 
+class ResetCamerasRequest(BaseModel):
+    camera_sources: list = []
+
 class EndSessionRequest(BaseModel):
     session_id: str
+
+@router.post("/cameras/reset")
+def reset_cameras(req: ResetCamerasRequest):
+    db_manager.forzar_reseteo_camaras(req.camera_sources)
+    return {"status": "success"}
 
 @router.post("/session/start")
 def start_session(req: StartSessionRequest, background_tasks: BackgroundTasks):

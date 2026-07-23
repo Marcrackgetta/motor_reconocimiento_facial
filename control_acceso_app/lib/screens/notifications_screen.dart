@@ -207,7 +207,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             child: ListTile(
               contentPadding: const EdgeInsets.all(16),
               leading: CircleAvatar(
-                backgroundColor: _getCardBorderColor(tipo).withOpacity(0.2),
+                backgroundColor: _getCardBorderColor(tipo).withValues(alpha: 0.2),
                 child: _getEventIcon(tipo),
               ),
               title: Text(

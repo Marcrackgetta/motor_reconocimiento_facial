@@ -24,7 +24,11 @@ class DatabaseManager:
         if not self.db:
             return "Desconocido"
         try:
-            users_ref = self.db.collection("usuarios").where("correo", "==", email).get()
+            users_ref = self.db.collection("Usuarios").where("email", "==", email).get()
+            if not users_ref:
+                users_ref = self.db.collection("Usuarios").where("correo", "==", email).get()
+            if not users_ref:
+                users_ref = self.db.collection("usuarios").where("correo", "==", email).get()
             if users_ref:
                 return users_ref[0].to_dict().get("rol", "Desconocido")
             return "Desconocido"
@@ -36,7 +40,9 @@ class DatabaseManager:
         if not self.db:
             return []
         try:
-            docs = self.db.collection("SesionesCamara").get()
+            docs = self.db.collection("Camaras").get()
+            if not docs:
+                docs = self.db.collection("SesionesCamara").get()
             return [{"id": doc.id, **doc.to_dict()} for doc in docs]
         except Exception as e:
             logging.error(f"Error obteniendo cámaras: {e}")
@@ -45,45 +51,236 @@ class DatabaseManager:
     def get_students_for_representative(self, email: str) -> list:
         if not self.db:
             return []
+        if not hasattr(self.db, "collection_group"):
+            try:
+                docs = self.db.collection("Estudiantes").where("representantes", "array_contains", email).get()
+                return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+            except Exception as e:
+                logging.error(f"Error obteniendo estudiantes para representante en Mock: {e}")
+                return []
         try:
-            docs = self.db.collection("Estudiantes").where("representantes", "array_contains", email).get()
+            docs = self.db.collection_group("Estudiantes").where("representantes", "array_contains", email).get()
             return [{"id": doc.id, **doc.to_dict()} for doc in docs]
-        except Exception as e:
-            logging.error(f"Error obteniendo estudiantes para representante: {e}")
-            return []
+        except Exception:
+            try:
+                docs = self.db.collection("Estudiantes").where("representantes", "array_contains", email).get()
+                if docs:
+                    return [{"id": doc.id, **doc.to_dict()} for doc in docs]
+
+                cursos = self.db.collection("Cursos").get()
+                students = []
+                for curso in cursos:
+                    st_docs = self.db.collection("Cursos").document(curso.id).collection("Estudiantes").get()
+                    for doc in st_docs:
+                        d = doc.to_dict()
+                        if email in d.get("representantes", []):
+                            students.append({"id": doc.id, **d})
+                return students
+            except Exception as e:
+                logging.error(f"Error obteniendo estudiantes para representante: {e}")
+                return []
 
     def forzar_reseteo_camaras(self, camera_sources):
-        """Limpia estados 'zombie' forzando todas las cámaras a APAGADA al inicio."""
+        """Limpia estados 'zombie' forzando todas las cámaras a APAGADA en la colección Camaras."""
         if not self.db:
             return
 
-        for cam in camera_sources:
+        for idx, cam in enumerate(camera_sources):
             lat = cam.get("lat", 0.0)
             lon = cam.get("lon", 0.0)
             curso_actual = cam.get("curso_asignado", "General")
-            curso_id = curso_actual.strip().replace(" ", "_")
+            camera_id = cam.get("camera_id", f"CAM_{idx}")
 
             try:
-                self.db.collection("SesionesCamara").document(curso_id).set(
+                self.db.collection("Camaras").document(camera_id).set(
                     {
+                        "camera_id": camera_id,
+                        "src": cam.get("src", idx),
                         "curso_asignado": curso_actual,
                         "estado": "APAGADA",
+                        "activa": False,
                         "ubicacion": GeoPoint(lat, lon),
+                        "latitud": lat,
+                        "longitud": lon,
+                        "ultima_desconexion": datetime.now().isoformat()
                     },
                     merge=True,
                 )
-                logging.info(
-                    f"Estado limpiado a APAGADA para la cámara del curso: {curso_id}"
-                )
+                logging.info(f"Estado limpiado a APAGADA para cámara [{camera_id}] ({curso_actual})")
             except Exception as e:
-                logging.error(f"Error al resetear estado de cámara {curso_id}: {e}")
+                logging.error(f"Error al resetear estado de cámara {camera_id}: {e}")
+
+    def iniciar_sesion_camara(self, camara_info, known_names=None):
+        if not self.db:
+            return None
+
+        lat = camara_info.get("lat", 0.0)
+        lon = camara_info.get("lon", 0.0)
+        curso_actual = camara_info.get("curso_asignado", "General")
+        camera_id = camara_info.get("camera_id") or f"CAM_{camara_info.get('src', 0)}"
+
+        cam_data = {
+            "camera_id": camera_id,
+            "src": camara_info.get("src", 0),
+            "curso_asignado": curso_actual,
+            "estado": "ACTIVA",
+            "activa": True,
+            "ubicacion": GeoPoint(lat, lon),
+            "latitud": lat,
+            "longitud": lon,
+            "ultima_conexion": datetime.now().isoformat()
+        }
+
+        try:
+            self.db.collection("Camaras").document(camera_id).set(cam_data, merge=True)
+
+            ahora = datetime.now()
+            sub_doc_id = ahora.strftime("%Y-%m-%d_%H-%M-%S")
+            fecha_hoy = ahora.strftime("%Y-%m-%d")
+            hora_inicio_cambio = ahora.strftime("%H:%M:%S")
+
+            session_key = camera_id
+            self.active_sessions[session_key] = {
+                "camera_id": camera_id,
+                "curso_asignado": curso_actual,
+                "sub_doc_id": sub_doc_id,
+                "fecha": fecha_hoy,
+                "hora_inicio": hora_inicio_cambio,
+                "documento_creado": False,
+            }
+
+            logging.info(
+                f"Cámara [{camera_id}] activa para el curso [{curso_actual}]."
+            )
+            return camera_id
+
+        except Exception as e:
+            logging.error(f"Error al arrancar sesión de cámara: {e}")
+            return None
+
+    def registrar_deteccion(
+        self,
+        session_id,
+        identidad,
+        estado,
+        confianza,
+        camara_info,
+        custom_doc_id=None,
+        known_names=None,
+    ):
+        if not self.db or not session_id:
+            return None
+
+        curso_actual = camara_info.get("curso_asignado", "General")
+        curso_id = curso_actual.strip().replace(" ", "_")
+
+        # 1. Procesar evento de la arquitectura de dominio
+        nuevo_evento = None
+        try:
+            nuevo_evento = self._procesar_evento_estudiante(identidad, estado, camara_info)
+        except Exception as e:
+            logging.error(f"Error procesando evento: {e}")
+
+        # 2. Registrar en Cursos/{curso_id}/InformeDiario/{fecha}
+        ahora = datetime.now()
+        fecha_hoy = ahora.strftime("%Y-%m-%d")
+
+        informe_ref = (
+            self.db.collection("Cursos")
+            .document(curso_id)
+            .collection("InformeDiario")
+            .document(fecha_hoy)
+        )
+
+        try:
+            doc = informe_ref.get()
+            if hasattr(doc, "exists") and doc.exists:
+                data = doc.to_dict()
+            else:
+                alumnos_esperados = []
+                if known_names:
+                    for name in known_names:
+                        if name != "Desconocido" and self._es_del_curso(name, curso_actual):
+                            nombre_limpio, _ = self._parse_identity(name)
+                            alumnos_esperados.append(nombre_limpio)
+
+                data = {
+                    "fecha": fecha_hoy,
+                    "hora_inicio": ahora.strftime("%H:%M:%S"),
+                    "hora_fin": "",
+                    "curso": curso_actual,
+                    "total_estudiantes": len(alumnos_esperados),
+                    "total_presentes": 0,
+                    "lista_presentes": [],
+                    "total_ausentes": len(alumnos_esperados),
+                    "lista_ausentes": alumnos_esperados,
+                    "total_intrusos": 0,
+                    "lista_intrusos": [],
+                    "total_desconocidos": 0,
+                }
+                self.db.collection("Cursos").document(curso_id).set({
+                    "curso_id": curso_id,
+                    "nombre": curso_actual,
+                    "activo": True
+                }, merge=True)
+
+            actualizado = False
+            nombre_limpio, curso_limpio = self._parse_identity(identidad)
+
+            if estado == "PRESENTE":
+                if nombre_limpio not in data.get("lista_presentes", []):
+                    data.setdefault("lista_presentes", []).append(nombre_limpio)
+                    data["total_presentes"] = len(data["lista_presentes"])
+                    actualizado = True
+
+                if nombre_limpio in data.get("lista_ausentes", []):
+                    data["lista_ausentes"].remove(nombre_limpio)
+                    data["total_ausentes"] = len(data["lista_ausentes"])
+                    actualizado = True
+
+            elif estado == "INTRUSO":
+                ya_registrado = any(
+                    i.get("nombre") == nombre_limpio for i in data.get("lista_intrusos", [])
+                )
+                if not ya_registrado:
+                    intruso_info = {
+                        "nombre": nombre_limpio,
+                        "curso_esperado": curso_limpio,
+                        "hora_primera_deteccion": ahora.strftime("%H:%M:%S"),
+                        "duracion_segundos": 0.0,
+                    }
+                    data.setdefault("lista_intrusos", []).append(intruso_info)
+                    data["total_intrusos"] = len(data["lista_intrusos"])
+                    actualizado = True
+
+            elif estado == "DESCONOCIDO":
+                data["total_desconocidos"] = data.get("total_desconocidos", 0) + 1
+                actualizado = True
+
+            if actualizado or not (hasattr(doc, "exists") and doc.exists):
+                informe_ref.set(data)
+
+            # 3. Telemetría técnica de la Cámara
+            camera_id = session_id if session_id.startswith("CAM_") else f"CAM_{camara_info.get('src', 0)}"
+            telemetria_ref = (
+                self.db.collection("Camaras")
+                .document(camera_id)
+                .collection("RegistroDiario")
+                .document(fecha_hoy)
+            )
+            telemetria_ref.set({
+                "fecha": fecha_hoy,
+                "ultima_deteccion": ahora.isoformat(),
+                "camera_id": camera_id
+            }, merge=True)
+
+            return {"id": fecha_hoy, "data": data, "nuevo_evento": nuevo_evento}
+
+        except Exception as e:
+            logging.error(f"Error al registrar detección en Cursos: {e}")
+            return None
 
     def _parse_identity(self, identity):
-        """
-        Parsea la identidad recibida eliminando la concatenación con el curso.
-        Retorna (nombre_limpio, curso_origen_limpio)
-        Ejemplo: "3_CC_A_Mat_Edward_Jaime" -> ("Edward Jaime", "3_CC_A_Mat")
-        """
         if not identity or identity in ["Desconocido", "Calculando..."]:
             return "Desconocido", "Desconocido"
 
@@ -115,14 +312,17 @@ class DatabaseManager:
     def _procesar_evento_estudiante(self, identidad, estado, camara_info):
         from src.backend.services.event_processor import event_processor, RecognitionResult
 
+        curso_actual = camara_info.get("curso_asignado", "General")
+        camera_id = camara_info.get("camera_id", f"CAM_{camara_info.get('src', 0)}")
+        camera_type = str(camara_info.get("tipo") or camara_info.get("camera_type") or "MONITOREO").upper()
         rec = RecognitionResult(
             session_id="session",
             track_id=1,
             identity_raw=identidad,
             confidence=95.0,
-            camera_id=camara_info.get("curso_asignado", "General"),
-            detected_course_id=camara_info.get("curso_asignado", "General"),
-            camera_type=camara_info.get("tipo", "AULA")
+            camera_id=camera_id,
+            detected_course_id=curso_actual,
+            camera_type=camera_type
         )
         event, alert = event_processor.process_recognition(rec)
 
@@ -138,21 +338,30 @@ class DatabaseManager:
 
             if self.db:
                 try:
-                    evento_ref = self.db.collection("Eventos").document()
+                    curso_id = event.origin_course_id.strip().replace(" ", "_")
+                    curso_doc = self.db.collection("Cursos").document(curso_id)
+                    if hasattr(curso_doc, "collection"):
+                        evento_ref = curso_doc.collection("Eventos").document()
+                    else:
+                        evento_ref = self.db.collection("Eventos").document()
                     evento_dict["id"] = evento_ref.id
                     evento_ref.set(evento_dict)
 
                     if event.student_id:
-                        estudiante_ref = self.db.collection("Estudiantes").document(event.student_id)
+                        if hasattr(curso_doc, "collection"):
+                            estudiante_ref = curso_doc.collection("Estudiantes").document(event.student_id)
+                        else:
+                            estudiante_ref = self.db.collection("Estudiantes").document(event.student_id)
                         doc = estudiante_ref.get()
-                        if not doc.exists:
+                        if not (hasattr(doc, "exists") and doc.exists):
                             estudiante_ref.set({
                                 "id": event.student_id,
                                 "nombre": event.student_name,
                                 "curso_origen": event.origin_course_id,
                                 "estado_actual": event.type,
                                 "representantes": ["representante@prueba.com"],
-                                "ultimo_evento_id": evento_ref.id
+                                "ultimo_evento_id": evento_ref.id,
+                                "ultima_deteccion": datetime.now().isoformat()
                             })
                         else:
                             estudiante_ref.update({
@@ -162,7 +371,7 @@ class DatabaseManager:
                                 "ultimo_evento_id": evento_ref.id
                             })
                 except Exception as e:
-                    logging.error(f"Error al guardar evento en Firestore: {e}")
+                    logging.error(f"Error al guardar evento en Cursos: {e}")
 
             return evento_dict
 
@@ -172,11 +381,15 @@ class DatabaseManager:
         if not self.db or not session_id or not doc_id or not identidad:
             return None
         try:
+            ahora = datetime.now()
+            fecha = doc_id if "-" in doc_id else ahora.strftime("%Y-%m-%d")
+            curso_id = session_id.strip().replace(" ", "_")
+
             doc_ref = (
-                self.db.collection("SesionesCamara")
-                .document(session_id)
-                .collection("RegistroDiario")
-                .document(doc_id)
+                self.db.collection("Cursos")
+                .document(curso_id)
+                .collection("InformeDiario")
+                .document(fecha)
             )
             doc = doc_ref.get()
 
@@ -204,7 +417,7 @@ class DatabaseManager:
         from src.backend.services.event_processor import event_processor
         alertas_generadas = []
         alerts = event_processor.evaluate_pending_incidents()
-        
+
         for alert in alerts:
             alerta_dict = alert.model_dump()
             alertas_generadas.append(alerta_dict)
@@ -213,29 +426,23 @@ class DatabaseManager:
                     self.db.collection("Alertas").document(alert.id).set(alerta_dict)
                 except Exception as e:
                     logging.error(f"Error guardando alerta en Firestore: {e}")
-            
+
         return alertas_generadas
-        
+
     def cerrar_sesion_camara(self, session_id, avg_fps=0.0):
         if not self.db or not session_id:
             return
         try:
-            self.db.collection("SesionesCamara").document(session_id).update(
+            camera_id = session_id if session_id.startswith("CAM_") else session_id
+            self.db.collection("Camaras").document(camera_id).set(
                 {
                     "estado": "APAGADA",
-                }
+                    "activa": False,
+                    "ultima_desconexion": datetime.now().isoformat()
+                },
+                merge=True
             )
-
-            session_data = self.active_sessions.get(session_id)
-            if session_data and session_data.get("documento_creado"):
-                sub_doc_id = session_data["sub_doc_id"]
-                hora_cierre = datetime.now().strftime("%H:%M:%S")
-                self.db.collection("SesionesCamara").document(session_id).collection(
-                    "RegistroDiario"
-                ).document(sub_doc_id).update({"hora_fin": hora_cierre})
-                logging.info(
-                    f"Sesión [{session_id}] cerrada. Hora de fin inyectada en [{sub_doc_id}]."
-                )
+            logging.info(f"Cámara [{camera_id}] marcada como APAGADA.")
 
         except Exception as e:
             logging.error(f"Error al registrar conclusión de transmisión: {e}")

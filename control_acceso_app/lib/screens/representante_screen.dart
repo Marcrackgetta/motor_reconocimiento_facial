@@ -141,9 +141,9 @@ class _RepresentanteScreenState extends State<RepresentanteScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -272,7 +272,7 @@ class _RepresentanteScreenState extends State<RepresentanteScreen> {
           Container(
             margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: IconButton(
@@ -511,7 +511,7 @@ class _RepresentanteScreenState extends State<RepresentanteScreen> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -834,7 +834,7 @@ class _StudentDetailBottomSheetState extends State<_StudentDetailBottomSheet> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFBC02D).withOpacity(0.2),
+                                    color: const Color(0xFFFBC02D).withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(

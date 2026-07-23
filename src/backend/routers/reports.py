@@ -5,19 +5,25 @@ from src.backend.core.dependencies import RequireRole
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
+def _get_all_event_docs():
+    docs = db_manager.db.collection_group("Eventos").get()
+    if not docs:
+        docs = db_manager.db.collection("Eventos").get()
+    return docs
+
 @router.get("/metrics")
 def get_metrics():
     """Métricas consolidadas generales del sistema"""
     if not db_manager.db:
         return {"entradas": 0, "salidas": 0, "alertas_ubicacion": 0, "intrusos": 0, "total_eventos": 0}
-    
+
     try:
-        eventos = db_manager.db.collection("Eventos").get()
+        eventos = _get_all_event_docs()
         total_entradas = 0
         total_salidas = 0
         total_alertas = 0
         total_intrusos = 0
-        
+
         for doc in eventos:
             data = doc.to_dict()
             tipo = data.get("tipo_evento") or data.get("type")
@@ -27,10 +33,10 @@ def get_metrics():
                 total_salidas += 1
             elif tipo in ["INTRUSO", "INTRUSO_EXTERNO"]:
                 total_intrusos += 1
-            
+
             if data.get("alerta_enviada") or data.get("alert_sent"):
                 total_alertas += 1
-                
+
         return {
             "entradas": total_entradas,
             "salidas": total_salidas,
@@ -46,9 +52,12 @@ def get_attendance_report(curso: Optional[str] = None):
     """Reporte de asistencia agregada por curso y fecha"""
     if not db_manager.db:
         return []
-    
+
     try:
-        registros = db_manager.db.collection_group("RegistroDiario").get()
+        registros = db_manager.db.collection_group("InformeDiario").get()
+        if not registros:
+            registros = db_manager.db.collection_group("RegistroDiario").get()
+
         res = []
         for doc in registros:
             data = doc.to_dict()
@@ -72,8 +81,13 @@ def get_entries_report(limit: int = 50):
     if not db_manager.db:
         return []
     try:
-        docs = db_manager.db.collection("Eventos").where("tipo_evento", "==", "ENTRADA").limit(limit).get()
-        return [{"id": d.id, **d.to_dict()} for d in docs]
+        eventos = _get_all_event_docs()
+        entries = [
+            {"id": d.id, **d.to_dict()} for d in eventos
+            if d.to_dict().get("tipo_evento") == "ENTRADA"
+        ]
+        entries.sort(key=lambda x: x.get("fecha_hora", ""), reverse=True)
+        return entries[:limit]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en reporte de entradas: {e}")
 
@@ -83,8 +97,13 @@ def get_exits_report(limit: int = 50):
     if not db_manager.db:
         return []
     try:
-        docs = db_manager.db.collection("Eventos").where("tipo_evento", "==", "SALIDA").limit(limit).get()
-        return [{"id": d.id, **d.to_dict()} for d in docs]
+        eventos = _get_all_event_docs()
+        exits = [
+            {"id": d.id, **d.to_dict()} for d in eventos
+            if d.to_dict().get("tipo_evento") == "SALIDA"
+        ]
+        exits.sort(key=lambda x: x.get("fecha_hora", ""), reverse=True)
+        return exits[:limit]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en reporte de salidas: {e}")
 
@@ -94,8 +113,13 @@ def get_intruders_report(limit: int = 50):
     if not db_manager.db:
         return []
     try:
-        docs = db_manager.db.collection("Eventos").where("tipo_evento", "==", "INTRUSO_EXTERNO").limit(limit).get()
-        return [{"id": d.id, **d.to_dict()} for d in docs]
+        eventos = _get_all_event_docs()
+        intruders = [
+            {"id": d.id, **d.to_dict()} for d in eventos
+            if d.to_dict().get("tipo_evento") in ["INTRUSO", "INTRUSO_EXTERNO"]
+        ]
+        intruders.sort(key=lambda x: x.get("fecha_hora", ""), reverse=True)
+        return intruders[:limit]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en reporte de intrusos: {e}")
 
@@ -105,8 +129,13 @@ def get_incidents_report(limit: int = 50):
     if not db_manager.db:
         return []
     try:
-        docs = db_manager.db.collection("Eventos").where("tipo_evento", "==", "CURSO_DIFERENTE").limit(limit).get()
-        return [{"id": d.id, **d.to_dict()} for d in docs]
+        eventos = _get_all_event_docs()
+        incidents = [
+            {"id": d.id, **d.to_dict()} for d in eventos
+            if d.to_dict().get("tipo_evento") == "CURSO_DIFERENTE"
+        ]
+        incidents.sort(key=lambda x: x.get("fecha_hora", ""), reverse=True)
+        return incidents[:limit]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en reporte de incidencias: {e}")
 
@@ -116,17 +145,17 @@ def get_stats_by_course():
     if not db_manager.db:
         return {}
     try:
-        eventos = db_manager.db.collection("Eventos").get()
+        eventos = _get_all_event_docs()
         stats: Dict[str, dict] = {}
-        
+
         for doc in eventos:
             data = doc.to_dict()
             curso = data.get("curso_detectado") or data.get("camara_curso") or "General"
             tipo = data.get("tipo_evento")
-            
+
             if curso not in stats:
                 stats[curso] = {"presentes": 0, "incidencias": 0, "entradas": 0}
-                
+
             if tipo == "PRESENCIA" or tipo == "PRESENCIA_NORMAL":
                 stats[curso]["presentes"] += 1
             elif tipo == "CURSO_DIFERENTE":
@@ -144,7 +173,7 @@ def get_stats_trends():
     if not db_manager.db:
         return []
     try:
-        eventos = db_manager.db.collection("Eventos").get()
+        eventos = _get_all_event_docs()
         trends: Dict[str, int] = {}
         for doc in eventos:
             data = doc.to_dict()

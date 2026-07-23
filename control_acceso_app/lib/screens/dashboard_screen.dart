@@ -82,7 +82,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Mover el mapa a la ubicación de la cámara si ya está listo
         try {
            _mapController.move(LatLng(_camLat, _camLng), 18);
-        } catch (e) {}
+        } catch (_) {
+           // Ignorar si el mapa no está listo aún
+        }
 
         _latestData = {};
       } else if (message['type'] == 'DETECTION_UPDATED') {
@@ -312,7 +314,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withValues(alpha: 0.9),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Text(

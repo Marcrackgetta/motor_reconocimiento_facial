@@ -26,10 +26,22 @@ def get_student_history(student_id: str, email: str = "", limit: int = 20):
                     detail="Acceso denegado: El estudiante no está asignado a su cuenta."
                 )
 
-    eventos_ref = db_manager.db.collection("Eventos")\
-        .where("estudiante_id", "==", student_id)\
-        .order_by("fecha_hora", direction="DESCENDING")\
-        .limit(limit)\
-        .get()
-
-    return [{"id": e.id, **e.to_dict()} for e in eventos_ref]
+    try:
+        eventos_ref = db_manager.db.collection_group("Eventos")\
+            .where("estudiante_id", "==", student_id)\
+            .order_by("fecha_hora", direction="DESCENDING")\
+            .limit(limit)\
+            .get()
+        if not eventos_ref:
+            eventos_ref = db_manager.db.collection("Eventos")\
+                .where("estudiante_id", "==", student_id)\
+                .order_by("fecha_hora", direction="DESCENDING")\
+                .limit(limit)\
+                .get()
+        return [{"id": e.id, **e.to_dict()} for e in eventos_ref]
+    except Exception:
+        eventos_ref = db_manager.db.collection("Eventos")\
+            .where("estudiante_id", "==", student_id)\
+            .limit(limit)\
+            .get()
+        return [{"id": e.id, **e.to_dict()} for e in eventos_ref]

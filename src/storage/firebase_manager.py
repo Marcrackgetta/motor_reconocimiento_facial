@@ -1,10 +1,8 @@
-# src/storage/firebase_manager.py
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore import GeoPoint
 from datetime import datetime
 import logging
-
 
 class FirebaseManager:
     def __init__(self, cred_path="credenciales.json"):
@@ -18,52 +16,50 @@ class FirebaseManager:
             logging.error(f"Error al conectar con Firebase: {e}")
             self.db = None
 
-        # Memoria temporal para rastrear el ID y estado de creación de cada sesión activa
         self.active_sessions = {}
 
     def forzar_reseteo_camaras(self, camera_sources):
-        """Limpia estados 'zombie' forzando todas las cámaras a APAGADA al inicio."""
         if not self.db:
             return
 
-        for cam in camera_sources:
+        for idx, cam in enumerate(camera_sources):
             lat = cam.get("lat", 0.0)
             lon = cam.get("lon", 0.0)
             curso_actual = cam.get("curso_asignado", "General")
-            curso_id = curso_actual.strip().replace(" ", "_")
+            camera_id = cam.get("camera_id", f"CAM_{idx}")
 
             try:
-                # Usamos merge=True para modificar solo el estado sin borrar historial si existiera
-                self.db.collection("SesionesCamara").document(curso_id).set(
+                self.db.collection("Camaras").document(camera_id).set(
                     {
+                        "camera_id": camera_id,
+                        "src": cam.get("src", idx),
                         "curso_asignado": curso_actual,
                         "estado": "APAGADA",
+                        "activa": False,
                         "ubicacion": GeoPoint(lat, lon),
+                        "latitud": lat,
+                        "longitud": lon,
+                        "ultima_desconexion": datetime.now().isoformat()
                     },
                     merge=True,
                 )
-                logging.info(
-                    f"Estado limpiado a APAGADA para la cámara del curso: {curso_id}"
-                )
+                logging.info(f"Estado limpiado a APAGADA para cámara [{camera_id}] ({curso_actual})")
             except Exception as e:
-                logging.error(f"Error al resetear estado de cámara {curso_id}: {e}")
+                logging.error(f"Error al resetear estado de cámara {camera_id}: {e}")
 
     def _parse_identity(self, identity):
         if not identity or identity in ["Desconocido", "Calculando..."]:
-            return identity, "Desconocido"
+            return "Desconocido", "Desconocido"
 
         partes = identity.split("_")
         if len(partes) >= 2:
-            # Toma estrictamente las dos ÚLTIMAS palabras como Nombre y Apellido
             nombre_limpio = " ".join(partes[-2:])
-            # Toma todo lo del principio como el curso
-            curso = " ".join(partes[:-2]) if len(partes) > 2 else "Desconocido"
+            curso = "_".join(partes[:-2]) if len(partes) > 2 else "Desconocido"
             return nombre_limpio, curso
 
         return identity, "Desconocido"
 
     def _es_del_curso(self, identity, curso_actual):
-        """Valida si un cadete pertenece al curso de la cámara activa"""
         curso_actual_norm = curso_actual.lower().replace("_", " ").strip()
         ident_norm = identity.lower().replace("_", " ").strip()
 
@@ -87,37 +83,43 @@ class FirebaseManager:
         lat = camara_info.get("lat", 0.0)
         lon = camara_info.get("lon", 0.0)
         curso_actual = camara_info.get("curso_asignado", "General")
-        curso_id = curso_actual.strip().replace(" ", "_")
+        camera_id = camara_info.get("camera_id") or f"CAM_{camara_info.get('src', 0)}"
 
-        # Registro principal: La cámara se marca como ACTIVA
-        root_data = {
+        cam_data = {
+            "camera_id": camera_id,
+            "src": camara_info.get("src", 0),
             "curso_asignado": curso_actual,
             "estado": "ACTIVA",
+            "activa": True,
             "ubicacion": GeoPoint(lat, lon),
+            "latitud": lat,
+            "longitud": lon,
+            "ultima_conexion": datetime.now().isoformat()
         }
 
         try:
-            doc_ref = self.db.collection("SesionesCamara").document(curso_id)
-            doc_ref.set(root_data)
+            self.db.collection("Camaras").document(camera_id).set(cam_data, merge=True)
 
-            # Generación del ID único (Día y Hora) y guardado en memoria (Creación Diferida)
             ahora = datetime.now()
             sub_doc_id = ahora.strftime("%Y-%m-%d_%H-%M-%S")
+            fecha_hoy = ahora.strftime("%Y-%m-%d")
             hora_inicio_cambio = ahora.strftime("%H:%M:%S")
 
-            self.active_sessions[curso_id] = {
+            session_key = camera_id
+            self.active_sessions[session_key] = {
+                "camera_id": camera_id,
+                "curso_asignado": curso_actual,
                 "sub_doc_id": sub_doc_id,
+                "fecha": fecha_hoy,
                 "hora_inicio": hora_inicio_cambio,
                 "documento_creado": False,
             }
 
-            logging.info(
-                f"Cámara activa. El documento [{sub_doc_id}] se creará en BD al primer escaneo."
-            )
-            return doc_ref.id
+            logging.info(f"Cámara [{camera_id}] activa para el curso [{curso_actual}].")
+            return camera_id
 
         except Exception as e:
-            logging.error(f"Error al arrancar sesión principal de cámara: {e}")
+            logging.error(f"Error al arrancar sesión de cámara: {e}")
             return None
 
     def registrar_deteccion(
@@ -133,47 +135,36 @@ class FirebaseManager:
         if not self.db or not session_id:
             return None
 
-        # Recuperar datos de la sesión actual desde la memoria
-        session_data = self.active_sessions.get(session_id)
-        if not session_data:
-            ahora = datetime.now()
-            session_data = {
-                "sub_doc_id": ahora.strftime("%Y-%m-%d_%H-%M-%S"),
-                "hora_inicio": ahora.strftime("%H:%M:%S"),
-                "documento_creado": False,
-            }
-            self.active_sessions[session_id] = session_data
+        curso_actual = camara_info.get("curso_asignado", "General")
+        curso_id = curso_actual.strip().replace(" ", "_")
+        ahora = datetime.now()
+        fecha_hoy = ahora.strftime("%Y-%m-%d")
 
-        sub_doc_id = session_data["sub_doc_id"]
-        doc_ref = (
-            self.db.collection("SesionesCamara")
-            .document(session_id)
-            .collection("RegistroDiario")
-            .document(sub_doc_id)
+        informe_ref = (
+            self.db.collection("Cursos")
+            .document(curso_id)
+            .collection("InformeDiario")
+            .document(fecha_hoy)
         )
 
         try:
-            doc = doc_ref.get()
-            curso_actual = camara_info.get("curso_asignado", "General")
-
+            doc = informe_ref.get()
             if doc.exists:
                 data = doc.to_dict()
             else:
-                # ¡AQUÍ SE CREA EL DOCUMENTO FÍSICO! (Solo al escanear a la primera persona)
                 alumnos_esperados = []
                 if known_names:
                     for name in known_names:
-                        if name != "Desconocido" and self._es_del_curso(
-                            name, curso_actual
-                        ):
+                        if name != "Desconocido" and self._es_del_curso(name, curso_actual):
                             nombre_limpio, _ = self._parse_identity(name)
                             alumnos_esperados.append(nombre_limpio)
 
                 data = {
-                    "fecha": datetime.now().strftime("%Y-%m-%d"),
-                    "hora_inicio": session_data["hora_inicio"],
+                    "fecha": fecha_hoy,
+                    "hora_inicio": ahora.strftime("%H:%M:%S"),
                     "hora_fin": "",
                     "curso": curso_actual,
+                    "total_estudiantes": len(alumnos_esperados),
                     "total_presentes": 0,
                     "lista_presentes": [],
                     "total_ausentes": len(alumnos_esperados),
@@ -182,37 +173,38 @@ class FirebaseManager:
                     "lista_intrusos": [],
                     "total_desconocidos": 0,
                 }
-                session_data["documento_creado"] = True
-                logging.info(
-                    f"Primer escaneo detectado. Creando documento de sesión: {sub_doc_id}"
-                )
+                self.db.collection("Cursos").document(curso_id).set({
+                    "curso_id": curso_id,
+                    "nombre": curso_actual,
+                    "activo": True
+                }, merge=True)
 
             actualizado = False
             nombre_limpio, curso_limpio = self._parse_identity(identidad)
 
             if estado == "PRESENTE":
-                if nombre_limpio not in data["lista_presentes"]:
-                    data["lista_presentes"].append(nombre_limpio)
+                if nombre_limpio not in data.get("lista_presentes", []):
+                    data.setdefault("lista_presentes", []).append(nombre_limpio)
                     data["total_presentes"] = len(data["lista_presentes"])
                     actualizado = True
 
-                if nombre_limpio in data["lista_ausentes"]:
+                if nombre_limpio in data.get("lista_ausentes", []):
                     data["lista_ausentes"].remove(nombre_limpio)
                     data["total_ausentes"] = len(data["lista_ausentes"])
                     actualizado = True
 
             elif estado == "INTRUSO":
                 ya_registrado = any(
-                    i.get("nombre") == nombre_limpio for i in data["lista_intrusos"]
+                    i.get("nombre") == nombre_limpio for i in data.get("lista_intrusos", [])
                 )
                 if not ya_registrado:
                     intruso_info = {
                         "nombre": nombre_limpio,
                         "curso_esperado": curso_limpio,
-                        "hora_primera_deteccion": datetime.now().strftime("%H:%M:%S"),
+                        "hora_primera_deteccion": ahora.strftime("%H:%M:%S"),
                         "duracion_segundos": 0.0,
                     }
-                    data["lista_intrusos"].append(intruso_info)
+                    data.setdefault("lista_intrusos", []).append(intruso_info)
                     data["total_intrusos"] = len(data["lista_intrusos"])
                     actualizado = True
 
@@ -221,26 +213,35 @@ class FirebaseManager:
                 actualizado = True
 
             if actualizado or not doc.exists:
-                doc_ref.set(data)
-                logging.info(
-                    f"Subcolección [{sub_doc_id}] actualizada con identidad: {identidad} ({estado})"
-                )
+                informe_ref.set(data)
 
-            return sub_doc_id
+            # Telemetría cámara
+            camera_id = session_id if session_id.startswith("CAM_") else f"CAM_{camara_info.get('src', 0)}"
+            self.db.collection("Camaras").document(camera_id).collection("RegistroDiario").document(fecha_hoy).set({
+                "fecha": fecha_hoy,
+                "ultima_deteccion": ahora.isoformat(),
+                "camera_id": camera_id
+            }, merge=True)
+
+            return fecha_hoy
 
         except Exception as e:
-            logging.error(f"Error al inyectar detección en asistencia: {e}")
+            logging.error(f"Error al registrar detección en Cursos: {e}")
             return None
 
     def actualizar_duracion_intruso(self, session_id, doc_id, duracion, identidad=None):
         if not self.db or not session_id or not doc_id or not identidad:
             return
         try:
+            ahora = datetime.now()
+            fecha = doc_id if "-" in doc_id else ahora.strftime("%Y-%m-%d")
+            curso_id = session_id.strip().replace(" ", "_")
+
             doc_ref = (
-                self.db.collection("SesionesCamara")
-                .document(session_id)
-                .collection("RegistroDiario")
-                .document(doc_id)
+                self.db.collection("Cursos")
+                .document(curso_id)
+                .collection("InformeDiario")
+                .document(fecha)
             )
             doc = doc_ref.get()
 
@@ -259,9 +260,6 @@ class FirebaseManager:
 
                 if modificado:
                     doc_ref.update({"lista_intrusos": intrusos})
-                    logging.info(
-                        f"Permanencia de intruso recalculada: {duracion}s añadidos a {nombre_limpio}."
-                    )
         except Exception as e:
             logging.error(f"Error al modificar permanencia de intruso: {e}")
 
@@ -269,28 +267,14 @@ class FirebaseManager:
         if not self.db or not session_id:
             return
         try:
-            # Finalizar estado en raíz
-            self.db.collection("SesionesCamara").document(session_id).update(
+            camera_id = session_id if session_id.startswith("CAM_") else session_id
+            self.db.collection("Camaras").document(camera_id).set(
                 {
                     "estado": "APAGADA",
-                }
+                    "activa": False,
+                    "ultima_desconexion": datetime.now().isoformat()
+                },
+                merge=True,
             )
-
-            # Modificar hora_fin únicamente si el documento fue creado (si alguien fue escaneado)
-            session_data = self.active_sessions.get(session_id)
-            if session_data and session_data.get("documento_creado"):
-                sub_doc_id = session_data["sub_doc_id"]
-                hora_cierre = datetime.now().strftime("%H:%M:%S")
-                self.db.collection("SesionesCamara").document(session_id).collection(
-                    "RegistroDiario"
-                ).document(sub_doc_id).update({"hora_fin": hora_cierre})
-                logging.info(
-                    f"Sesión [{session_id}] cerrada. Hora de fin inyectada en [{sub_doc_id}]."
-                )
-            else:
-                logging.info(
-                    f"Sesión [{session_id}] cerrada sin escaneos. No se generó documento vacío en BD."
-                )
-
         except Exception as e:
             logging.error(f"Error al registrar conclusión de transmisión: {e}")

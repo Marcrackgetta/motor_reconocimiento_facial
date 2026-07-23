@@ -390,18 +390,19 @@
 
             if (observadorLista) observadorLista();
 
-            observadorLista = db.collection("SesionesCamara").onSnapshot((querySnapshot) => {
+            observadorLista = db.collection("Camaras").onSnapshot((querySnapshot) => {
                 const valorSeleccionado = selForma.value;
                 selForma.innerHTML = '<option value="">-- Selecciona una cámara --</option>';
 
                 if (querySnapshot.empty) {
-                    selForma.innerHTML = '<option value="">⚠️ No hay documentos en SesionesCamara</option>';
+                    selForma.innerHTML = '<option value="">⚠️ No hay documentos en Camaras</option>';
                     return;
                 }
 
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
                     const idDoc = doc.id;
+                    const nombreCamara = data.curso_asignado ? `${idDoc} (${data.curso_asignado})` : idDoc;
 
                     const estaDesconectada =
                         data.activo === false ||
@@ -415,12 +416,12 @@
                     option.value = idDoc;
 
                     if (estaDesconectada) {
-                        option.textContent = `🔴 ✖ ${idDoc} (DESACTIVADA)`;
+                        option.textContent = `🔴 ✖ ${nombreCamara} (DESACTIVADA)`;
                         option.className = "desconectada";
                         option.style.textDecoration = "line-through";
                         option.style.color = "#94a3b8";
                     } else {
-                        option.textContent = `🟢 ${idDoc}`;
+                        option.textContent = `🟢 ${nombreCamara}`;
                         option.className = "activa";
                     }
 
@@ -457,27 +458,37 @@
             datosCamaraActual = null;
             datosRegistroActual = null;
 
-            observadorCamara = db.collection("SesionesCamara").doc(idCamara).onSnapshot((docCamara) => {
+            observadorCamara = db.collection("Camaras").doc(idCamara).onSnapshot((docCamara) => {
                 if (!docCamara.exists) {
                     statusDiv.innerHTML = `<span style="color:red;">❌ El documento de la cámara no existe.</span>`;
                     return;
                 }
                 datosCamaraActual = docCamara.data();
                 actualizarPantalla(idCamara);
+
+                const cursoId = (datosCamaraActual.curso_asignado || idCamara).trim().replace(/ /g, '_');
+
+                if (observadorRegistro) observadorRegistro();
+                observadorRegistro = db.collection("Cursos").doc(cursoId).collection("InformeDiario")
+                    .orderBy(firebase.firestore.FieldPath.documentId(), "desc")
+                    .limit(1)
+                    .onSnapshot((querySnapshot) => {
+                        if (!querySnapshot.empty) {
+                            datosRegistroActual = {
+                                id: querySnapshot.docs[0].id,
+                                data: querySnapshot.docs[0].data()
+                            };
+                        } else {
+                            datosRegistroActual = null;
+                        }
+                        actualizarPantalla(idCamara);
+                    }, (err) => {
+                        console.error("Error observando InformeDiario:", err);
+                    });
             }, (error) => {
                 console.error("Error en Snapshot Cámara:", error);
                 statusDiv.innerHTML = `<span style="color:red;">❌ Error de Cámara: ${error.message}</span>`;
             });
-
-            observadorRegistro = db.collection("SesionesCamara").doc(idCamara).collection("RegistroDiario")
-                .orderBy(firebase.firestore.FieldPath.documentId(), "desc")
-                .limit(1)
-                .onSnapshot((querySnapshot) => {
-                    if (!querySnapshot.empty) {
-                        datosRegistroActual = {
-                            id: querySnapshot.docs[0].id,
-                            data: querySnapshot.docs[0].data()
-                        };
                     } else {
                         datosRegistroActual = null;
                     }
