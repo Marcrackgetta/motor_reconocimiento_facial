@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="content-header">
+  <div class="container-fluid">
+    <div class="row mb-2">
+      <div class="col-sm-6">
+        <h1 class="m-0">Monitor de Asistencia</h1>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="container-fluid">
+    <div class="row">
+      
+      <!-- Tarjeta de Resumen -->
+      <div class="col-lg-3 col-6">
+        <div class="small-box bg-success">
+          <div class="inner">
+            <h3>0</h3>
+            <p>Estudiantes Presentes</p>
+          </div>
+          <div class="icon">
+            <i class="fas fa-user-check"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-3 col-6">
+        <div class="small-box bg-warning">
+          <div class="inner">
+            <h3>0</h3>
+            <p>Alertas de Intrusos</p>
+          </div>
+          <div class="icon">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Fila para la Tabla de Asistencia en Vivo -->
+    <div class="row">
+      <div class="col-lg-12">
+        <div class="card card-primary card-outline">
+          <div class="card-header">
+            <h5 class="m-0">Últimos Registros del Motor Edge</h5>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Identificador</th>
+                  <th>Cámara</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Los datos se llenarán aquí pronto -->
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-4">Esperando eventos del motor...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
