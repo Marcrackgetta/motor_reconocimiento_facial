@@ -39,6 +39,10 @@ class UsuarioResponse(BaseModel):
         from_attributes = True
 
 # --- ESQUEMAS PARA ESTUDIANTES Y CURSOS ---
+class CursoCreate(BaseModel):
+    nombre: str
+    inspector_id: Optional[int] = None
+
 class EstudianteNuevo(BaseModel):
     uuid: str
     nombre_completo: str

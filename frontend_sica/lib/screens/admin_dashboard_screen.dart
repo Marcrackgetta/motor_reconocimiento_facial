@@ -4,6 +4,9 @@ import '../services/auth_service.dart';
 import 'login_screen.dart';
 import 'representante_dashboard_screen.dart';
 import 'inspector_dashboard_screen.dart';
+import 'admin_usuarios_screen.dart';
+import 'admin_estudiantes_screen.dart';
+import 'admin_cursos_screen.dart'; // Nueva importación
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -38,7 +41,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  // Lógica para el cambio de vistas
   void _cambiarDeVista(String vistaDestino) {
     Widget pantalla;
     if (vistaDestino == 'Inspector') {
@@ -46,10 +48,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } else if (vistaDestino == 'Representante') {
       pantalla = const RepresentanteDashboardScreen();
     } else {
-      return; // Ya estamos en el admin
+      return;
     }
 
-    // Usamos push para permitir al administrador regresar al panel de admin usando el botón "Atrás"
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => pantalla),
@@ -65,7 +66,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: Colors.blueGrey[800],
         elevation: 0,
         actions: [
-          // Selector para cambiar la vista del sistema
           PopupMenuButton<String>(
             icon: const Icon(Icons.remove_red_eye, color: Colors.white),
             tooltip: 'Cambiar de Vista',
@@ -126,7 +126,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _construirGridModulos() {
-    // Definimos la estructura de nuestros módulos según la solicitud
     final modulos = [
       {'titulo': 'Usuarios', 'icono': Icons.manage_accounts, 'color': Colors.blue},
       {'titulo': 'Representantes', 'icono': Icons.family_restroom, 'color': Colors.amber[700]},
@@ -142,10 +141,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, // Dos columnas para mantener el orden y legibilidad
+        crossAxisCount: 2, 
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-        childAspectRatio: 1.1, // Ajusta la proporción ancho/alto de las tarjetas
+        childAspectRatio: 1.1, 
       ),
       itemCount: modulos.length,
       itemBuilder: (context, index) {
@@ -162,10 +161,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _construirTarjetaModulo({required String titulo, required IconData icono, required Color colorBase}) {
     return InkWell(
       onTap: () {
-        // Por el momento mostramos un mensaje, aquí conectaremos las futuras pantallas
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Módulo de $titulo en construcción...')),
-        );
+        // Lógica actualizada para enrutar a la gestión de Cursos
+        if (titulo == 'Usuarios') {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminUsuariosScreen()));
+        } else if (titulo == 'Estudiantes') {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminEstudiantesScreen()));
+        } else if (titulo == 'Cursos') {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminCursosScreen()));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Módulo de $titulo funcional en proceso...')));
+        }
       },
       borderRadius: BorderRadius.circular(15),
       child: Card(
@@ -177,10 +182,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                colorBase.withOpacity(0.1),
-                Colors.white,
-              ],
+              colors: [colorBase.withOpacity(0.1), Colors.white],
             ),
           ),
           child: Column(
@@ -188,18 +190,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorBase.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: colorBase.withOpacity(0.2), shape: BoxShape.circle),
                 child: Icon(icono, size: 36, color: colorBase),
               ),
               const SizedBox(height: 12),
-              Text(
-                titulo,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                textAlign: TextAlign.center,
-              ),
+              Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87), textAlign: TextAlign.center),
             ],
           ),
         ),

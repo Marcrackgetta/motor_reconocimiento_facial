@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../models/estudiante.dart';
 import 'estudiante_detalle_screen.dart';
+import 'login_screen.dart'; 
 
 class RepresentanteDashboardScreen extends StatefulWidget {
   const RepresentanteDashboardScreen({super.key});
@@ -15,11 +18,20 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
   List<Estudiante> _estudiantes = [];
   bool _isLoading = true;
   String _errorMessage = '';
+  String _nombreUsuario = 'Cargando...'; 
 
   @override
   void initState() {
     super.initState();
-    _cargarEstudiantes();
+    _cargarDatosUsuario(); 
+    _cargarEstudiantes();  
+  }
+
+  Future<void> _cargarDatosUsuario() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _nombreUsuario = prefs.getString('nombre') ?? 'Representante';
+    });
   }
 
   Future<void> _cargarEstudiantes() async {
@@ -29,7 +41,6 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
     });
 
     try {
-      // Consumimos los estudiantes reales desde la API
       final estudiantes = await _apiService.fetchEstudiantes();
       setState(() {
         _estudiantes = estudiantes;
@@ -43,23 +54,34 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
     }
   }
 
+  void _cerrarSesion() async {
+    final authService = AuthService();
+    await authService.logout();
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('SICA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24, letterSpacing: 1.2)),
-        backgroundColor: Colors.amber[400], // Color amarillo basado en la referencia
+        title: const Text('SICA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24, letterSpacing: 1.2, color: Colors.black87)),
+        backgroundColor: Colors.amber[400], 
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () {}, // Menú lateral futuro
-        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.black87),
             onPressed: _cargarEstudiantes,
           ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.black87), 
+            onPressed: _cerrarSesion,
+          ), 
         ],
       ),
       body: Column(
@@ -70,44 +92,33 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
           ),
         ],
       ),
-      // Botón flotante extendido basado en la referencia "Agregar Alumno"
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
-        backgroundColor: Colors.amber[400],
-        icon: const Icon(Icons.person_add_alt_1, color: Colors.black87),
-        label: const Text('Agregar Alumno', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      // EL BOTÓN FLOTANTE DE "AGREGAR ALUMNO" HA SIDO ELIMINADO CUMPLIENDO LA REGLA DE NEGOCIO
     );
   }
 
-  // 1. DATOS DEL REPRESENTANTE
   Widget _construirEncabezadoRepresentante() {
     return Container(
       width: double.infinity,
       color: Colors.white,
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       margin: const EdgeInsets.only(bottom: 10),
-      child: const Column(
+      child: Column(
         children: [
-          Text('Bienvenido', style: TextStyle(fontSize: 16, color: Colors.black54)),
-          SizedBox(height: 4),
+          const Text('Bienvenido', style: TextStyle(fontSize: 16, color: Colors.black54)),
+          const SizedBox(height: 4),
           Text(
-            'ELSA MARINA AGUIRRE ALARCÓN', 
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            _nombreUsuario.toUpperCase(), 
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 4),
-          Text('Cédula 1202976328', style: TextStyle(fontSize: 16, color: Colors.black54)),
         ],
       ),
     );
   }
 
-  // 2. LISTA DE ESTUDIANTES
   Widget _construirListaEstudiantes() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: Colors.amber));
     }
 
     if (_errorMessage.isNotEmpty) {
@@ -115,13 +126,23 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
     }
 
     if (_estudiantes.isEmpty) {
-      return const Center(child: Text('No tiene estudiantes registrados.'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text(
+            'Aún no tiene estudiantes asignados.\nConsulte con la administración.', 
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.black54, fontSize: 16)
+          ),
+        )
+      );
     }
 
     return RefreshIndicator(
+      color: Colors.amber,
       onRefresh: _cargarEstudiantes,
       child: ListView.builder(
-        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 80), // bottom padding para no tapar el FAB
+        padding: const EdgeInsets.all(16), 
         itemCount: _estudiantes.length,
         itemBuilder: (context, index) {
           final estudiante = _estudiantes[index];
@@ -140,7 +161,6 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
         padding: const EdgeInsets.all(16.0),
         child: Row(
           children: [
-            // Avatar del estudiante
             Container(
               width: 70,
               height: 70,
@@ -152,8 +172,6 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
               child: const Icon(Icons.person, size: 40, color: Colors.black54),
             ),
             const SizedBox(width: 16),
-            
-            // Datos del Estudiante
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,13 +193,10 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
                 ],
               ),
             ),
-            
-            // Botón VER
             Column(
               children: [
                 ElevatedButton(
                   onPressed: () {
-                    // Navegamos al detalle y le pasamos el estudiante completo
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -190,7 +205,7 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.greenAccent[700], // Verde vibrante
+                    backgroundColor: Colors.greenAccent[700], 
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
