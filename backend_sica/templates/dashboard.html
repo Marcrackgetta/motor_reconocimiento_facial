@@ -15,11 +15,12 @@
   <div class="container-fluid">
     <div class="row">
       
-      <!-- Tarjeta de Resumen -->
+      <!-- Tarjeta de Resumen: Presentes -->
       <div class="col-lg-3 col-6">
         <div class="small-box bg-success">
           <div class="inner">
-            <h3>0</h3>
+            <!-- Inyectamos la variable desde FastAPI -->
+            <h3>{{ total_presentes }}</h3>
             <p>Estudiantes Presentes</p>
           </div>
           <div class="icon">
@@ -28,10 +29,12 @@
         </div>
       </div>
 
+      <!-- Tarjeta de Resumen: Intrusos -->
       <div class="col-lg-3 col-6">
         <div class="small-box bg-warning">
           <div class="inner">
-            <h3>0</h3>
+            <!-- Inyectamos la variable desde FastAPI -->
+            <h3>{{ total_intrusos }}</h3>
             <p>Alertas de Intrusos</p>
           </div>
           <div class="icon">
@@ -53,17 +56,37 @@
             <table class="table table-striped">
               <thead>
                 <tr>
-                  <th>Hora</th>
-                  <th>Identificador</th>
+                  <th>Fecha y Hora</th>
+                  <th>Identificador (UUID)</th>
                   <th>Cámara</th>
                   <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
-                <!-- Los datos se llenarán aquí pronto -->
+                <!-- Bucle de Jinja2 para recorrer los registros de la base de datos -->
+                {% for asistencia in asistencias %}
                 <tr>
-                  <td colspan="4" class="text-center text-muted py-4">Esperando eventos del motor...</td>
+                  <!-- Formateamos la fecha directamente en la plantilla -->
+                  <td>{{ asistencia.fecha_registro.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                  <td><strong>{{ asistencia.estudiante_uuid }}</strong></td>
+                  <td>{{ asistencia.camera_id }}</td>
+                  <td>
+                    <!-- Lógica condicional para aplicar colores según el estado -->
+                    {% if asistencia.estado == 'PRESENTE' %}
+                      <span class="badge bg-success">PRESENTE</span>
+                    {% elif asistencia.estado == 'INTRUSO' %}
+                      <span class="badge bg-warning">INTRUSO</span>
+                    {% else %}
+                      <span class="badge bg-danger">{{ asistencia.estado }}</span>
+                    {% endif %}
+                  </td>
                 </tr>
+                {% else %}
+                <!-- Esto se muestra si la tabla de la base de datos está vacía -->
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-4">No hay eventos registrados en el sistema.</td>
+                </tr>
+                {% endfor %}
               </tbody>
             </table>
           </div>

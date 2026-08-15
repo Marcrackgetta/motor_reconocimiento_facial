@@ -39,14 +39,16 @@
       <nav class="mt-2">
         <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
           <li class="nav-item">
-            <a href="/" class="nav-link active">
+            <!-- Modificamos la ruta para que siempre apunte al dashboard -->
+            <a href="/" class="nav-link">
               <i class="nav-icon fas fa-tachometer-alt"></i>
               <p>Dashboard en Vivo</p>
             </a>
           </li>
           <li class="nav-header">ADMINISTRACIÓN</li>
           <li class="nav-item">
-            <a href="#" class="nav-link">
+            <!-- ¡NUEVO! Conectamos el botón al endpoint de estudiantes -->
+            <a href="/estudiantes" class="nav-link">
               <i class="nav-icon fas fa-users"></i>
               <p>Estudiantes</p>
             </a>
@@ -64,7 +66,7 @@
 
   <!-- Contenido Principal Dinámico -->
   <div class="content-wrapper">
-    <!-- Aquí inyectaremos el contenido de dashboard.html -->
+    <!-- Aquí inyectaremos el contenido de cada página -->
     {% block content %}{% endblock %}
   </div>
 
