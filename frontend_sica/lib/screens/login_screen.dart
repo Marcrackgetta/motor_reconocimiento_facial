@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
 import 'representante_dashboard_screen.dart';
-import 'inspector_dashboard_screen.dart';
-import 'admin_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,152 +9,99 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final AuthService _authService = AuthService();
-  
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
-  String _errorMessage = '';
 
-  void _iniciarSesion() async {
-    // Validaciones básicas de campos vacíos
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() => _errorMessage = 'Por favor, llene todos los campos.');
-      return;
-    }
+  void _iniciarSesionRepresentante() async {
+    setState(() => _isLoading = true);
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = '';
-    });
+    // MOCK: Simulamos un tiempo de carga mientras conectamos Firebase Auth
+    await Future.delayed(const Duration(seconds: 1));
 
-    try {
-      // Obtenemos el rol desde el backend usando nuestro servicio actualizado
-      final String rolObtenido = await _authService.login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
+    if (mounted) {
+      setState(() => _isLoading = false);
+      // Navegamos directamente al Dashboard del Representante
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const RepresentanteDashboardScreen()),
       );
-
-      if (mounted) {
-        Widget pantallaDestino;
-        
-        // Normalizamos el texto (mayúsculas y sin espacios) para garantizar la comparación
-        final String rolSeguro = rolObtenido.trim().toUpperCase();
-
-        // Enrutamiento Inteligente según el Rol
-        if (rolSeguro == 'ADMINISTRADOR') {
-          pantallaDestino = const AdminDashboardScreen();
-        } else if (rolSeguro == 'INSPECTOR') {
-          pantallaDestino = const InspectorDashboardScreen();
-        } else {
-          // Por defecto y para representantes
-          pantallaDestino = const RepresentanteDashboardScreen();
-        }
-
-        // Reemplazamos la pantalla de login por el dashboard correspondiente
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => pantallaDestino),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.amber[400], // Fondo amarillo corporativo
+      backgroundColor: Colors.blueGrey[50],
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: Card(
-            elevation: 10,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            child: Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.shield, size: 80, color: Colors.black87),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'SICA',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 2.0),
-                  ),
-                  const Text(
-                    'Control de Acceso Escolar',
-                    style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 32),
-                  
-                  if (_errorMessage.isNotEmpty)
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red[200]!),
+                        color: Colors.amber[100],
+                        shape: BoxShape.circle,
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline, color: Colors.red),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(_errorMessage, style: TextStyle(color: Colors.red[800])),
-                          ),
-                        ],
+                      child: const Icon(Icons.family_restroom, size: 48, color: Colors.amber),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Portal Representantes',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Ingrese sus credenciales de acceso',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 32),
+                    TextField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        labelText: 'Correo Electrónico',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Contraseña',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      obscureText: true, // Corrección aplicada aquí
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _iniciarSesionRepresentante,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey[800],
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('Ingresar al Sistema', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
-                  
-                  TextField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: 'Correo Electrónico',
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: 'Contraseña',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : ElevatedButton(
-                            onPressed: _iniciarSesion,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black87,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text('INGRESAR', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                          ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

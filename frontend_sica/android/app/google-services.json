@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "577669516511",
+    "project_id": "sica-app-colegio",
+    "storage_bucket": "sica-app-colegio.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:577669516511:android:6dd5fa0cf855a446a7ed6a",
+        "android_client_info": {
+          "package_name": "com.example.frontend_sica"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDPPd6aQrpjzPnFebQwC4MpTHMQgY9fKs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
