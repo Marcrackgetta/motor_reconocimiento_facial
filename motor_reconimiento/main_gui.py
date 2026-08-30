@@ -54,6 +54,7 @@ class FaceRecognitionGUI:
         
         self.current_operation_mode = "ENTRADA"
 
+        # Optimización de rendimiento: Salto de Fotogramas (Frame Skipping)
         self.frame_counter = 0
         self.process_every_n_frames = 3
         self.last_faces = [] 
@@ -182,9 +183,11 @@ class FaceRecognitionGUI:
         self.sender_thread.start()
 
         print("[INFO] Conectando a las cámaras...")
-        # LÍNEA CORREGIDA: Bucle único de conexión para evitar cámara parpadeante
         for cam in CAMERA_SOURCES:
             cam_id = cam.get("camera_id", "CAM_DEFAULT")
+            cam_nombre = cam.get("nombre", f"Cámara {cam_id}")
+            cam_ubicacion = cam.get("ubicacion", {"latitude": -2.128589, "longitude": -79.931099})
+            
             stream = CameraStream(
                 source=cam["src"],
                 camera_id=cam_id,
@@ -192,8 +195,8 @@ class FaceRecognitionGUI:
             )
             self.streams.append(stream)
             
-            # Reportar a Firebase que la cámara se encendió exitosamente
-            self.api_client.set_camera_status(cam_id, True)
+            # Reportar a Firebase que la cámara se encendió exitosamente, incluyendo coordenadas
+            self.api_client.set_camera_status(cam_id, True, ubicacion=cam_ubicacion, nombre_camara=cam_nombre)
 
     def _event_sender_task(self):
         while self.running:

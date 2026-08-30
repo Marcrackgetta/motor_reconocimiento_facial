@@ -1,1 +1,32 @@
+# ==========================================
+# Ejecutables y Archivos Compilados
+# ==========================================
+*.exe
+*.apk
+*.aab
+
+# ==========================================
+# Archivos de Entorno y Seguridad (¡Muy importante!)
+# ==========================================
+serviceAccountKey.json
+.env
+
+# ==========================================
+# Motor de Reconocimiento (Python)
+# ==========================================
 .venv/
+__pycache__/
+build/
+dist/
+*.pyc
+*.spec
+
+# ==========================================
+# Interfaz de Usuario (Flutter)
+# ==========================================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+frontend_sica/build/

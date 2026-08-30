@@ -245,20 +245,29 @@ class FirebaseClient:
 
 
 
-    def set_camera_status(self, camera_id, is_active):
+    def set_camera_status(self, camera_id, is_active, ubicacion=None, nombre_camara=None):
         """
-        Actualiza el estado de conexión de la cámara en Firebase.
+        Actualiza el estado de conexión, nombre y ubicación de la cámara en Firebase.
         """
         try:
-            # CORRECCIÓN: Utilizamos 'db.reference' directamente (sin self.)
             from firebase_admin import db
             ref = db.reference(f'SesionesCamara/{camera_id}')
             
-            ref.update({
+            # Datos básicos de estado
+            datos = {
                 'activo': is_active,
                 'estado': 'Activa' if is_active else 'Desconectada',
                 'status': 'online' if is_active else 'offline'
-            })
+            }
+            
+            # Solo actualizamos el nombre y la ubicación cuando la cámara se enciende
+            if is_active:
+                if nombre_camara:
+                    datos['camara_nombre'] = nombre_camara
+                if ubicacion:
+                    datos['ubicacion'] = ubicacion
+                    
+            ref.update(datos)
             estado_str = "ENCENDIDA" if is_active else "APAGADA"
             print(f"[FIREBASE] Estado de la cámara {camera_id} actualizado a: {estado_str}")
         except Exception as e:
