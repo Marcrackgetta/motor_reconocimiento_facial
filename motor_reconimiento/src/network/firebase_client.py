@@ -1,11 +1,12 @@
-import os
-import time
-import threading
-from datetime import datetime
 import logging
+import os
+import threading
+import time
+from datetime import datetime
+from typing import Any
+
 import firebase_admin
 from firebase_admin import credentials, db, messaging
-from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -19,7 +20,7 @@ class FirebaseClient:
         self.is_connected = False
         
         # Diccionario para controlar el estado de las notificaciones hoy.
-        self.daily_notifications: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.daily_notifications: dict[str, dict[str, dict[str, Any]]] = {}
         
         self.horas_minimas_para_salida = 4.0 
         
@@ -68,7 +69,7 @@ class FirebaseClient:
         hilo = threading.Thread(target=_rutina, daemon=True)
         hilo.start()
 
-    def send_event(self, event_data: Dict[str, Any], modo_operacion: str = "ENTRADA") -> bool:
+    def send_event(self, event_data: dict[str, Any], modo_operacion: str = "ENTRADA") -> bool:
         if not self.is_connected:
             return False
             
@@ -241,3 +242,24 @@ class FirebaseClient:
                 
         except Exception as e:
             logging.error(f"[FCM] Error al enviar notificación Push: {e}")
+
+
+
+    def set_camera_status(self, camera_id, is_active):
+        """
+        Actualiza el estado de conexión de la cámara en Firebase.
+        """
+        try:
+            # CORRECCIÓN: Utilizamos 'db.reference' directamente (sin self.)
+            from firebase_admin import db
+            ref = db.reference(f'SesionesCamara/{camera_id}')
+            
+            ref.update({
+                'activo': is_active,
+                'estado': 'Activa' if is_active else 'Desconectada',
+                'status': 'online' if is_active else 'offline'
+            })
+            estado_str = "ENCENDIDA" if is_active else "APAGADA"
+            print(f"[FIREBASE] Estado de la cámara {camera_id} actualizado a: {estado_str}")
+        except Exception as e:
+            print(f"[ERROR] No se pudo actualizar el estado de la cámara {camera_id}: {e}")
