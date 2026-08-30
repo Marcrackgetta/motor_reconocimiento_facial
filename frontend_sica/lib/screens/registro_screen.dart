@@ -3,55 +3,63 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'representante_dashboard_screen.dart';
-import 'registro_screen.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegistroScreen extends StatefulWidget {
+  const RegistroScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegistroScreen> createState() => _RegistroScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegistroScreenState extends State<RegistroScreen> {
+  final TextEditingController _nombreController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   
   bool _isLoading = false;
   bool _ocultarPassword = true; // NUEVO: Variable para controlar la visibilidad
 
-  Future<void> _iniciarSesionRepresentante() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      _mostrarError('Ingrese su correo y contraseña.');
+  Future<void> _registrarRepresentante() async {
+    if (_nombreController.text.isEmpty || _emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      _mostrarError('Por favor, complete todos los campos.');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      final snapshot = await FirebaseDatabase.instance.ref('Usuarios/${userCredential.user!.uid}').get();
-      if (snapshot.exists) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('nombre', data['nombre'] ?? 'Representante');
-      }
+      final dbRef = FirebaseDatabase.instance.ref();
+      await dbRef.child('Usuarios/${userCredential.user!.uid}').set({
+        'rol': 'REPRESENTANTE',
+        'correo': _emailController.text.trim(),
+        'nombre': _nombreController.text.trim(),
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('nombre', _nombreController.text.trim());
 
       if (mounted) {
         setState(() => _isLoading = false);
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const RepresentanteDashboardScreen()),
+          (route) => false,
         );
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _isLoading = false);
-      String mensaje = 'Credenciales incorrectas.';
-      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
-        mensaje = 'Correo o contraseña incorrectos.';
+      String mensaje = 'Error al registrar.';
+      if (e.code == 'weak-password') {
+        mensaje = 'La contraseña es muy débil (mínimo 6 caracteres).';
+      } else if (e.code == 'email-already-in-use') {
+        mensaje = 'Ya existe una cuenta con este correo.';
+      } else if (e.code == 'invalid-email') {
+        mensaje = 'El formato del correo es inválido.';
       }
       _mostrarError(mensaje);
     } catch (e) {
@@ -70,6 +78,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.blueGrey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -83,25 +96,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.amber[100],
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.family_restroom, size: 48, color: Colors.amber),
-                    ),
+                    const Icon(Icons.person_add_alt_1, size: 48, color: Colors.blueGrey),
                     const SizedBox(height: 24),
                     const Text(
-                      'Portal Representantes',
+                      'Crear Cuenta',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Ingrese sus credenciales de acceso',
-                      style: TextStyle(fontSize: 14, color: Colors.black54),
-                    ),
                     const SizedBox(height: 32),
+                    TextField(
+                      controller: _nombreController,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre Completo',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _emailController,
                       decoration: InputDecoration(
@@ -119,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _passwordController,
                       obscureText: _ocultarPassword, // Controlado por la variable
                       decoration: InputDecoration(
-                        labelText: 'Contraseña',
+                        labelText: 'Contraseña (mín. 6 caracteres)',
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -140,27 +151,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _iniciarSesionRepresentante,
+                        onPressed: _isLoading ? null : _registrarRepresentante,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueGrey[800],
+                          backgroundColor: Colors.amber[600],
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: _isLoading
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('Ingresar al Sistema', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            : const Text('Registrarse', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const RegistroScreen()),
-                        );
-                      },
-                      child: const Text('¿No tienes cuenta? Regístrate aquí'),
-                    )
                   ],
                 ),
               ),

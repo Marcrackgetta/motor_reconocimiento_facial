@@ -4,9 +4,10 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 
 Future<void> main() async {
+  // Asegura que los bindings de Flutter estén listos antes de inicializar Firebase
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Inicializa Firebase con la configuración de tu proyecto
+  // Inicializa Firebase con las credenciales autogeneradas por FlutterFire
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -24,6 +25,7 @@ class SicaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blueGrey,
+        scaffoldBackgroundColor: Colors.blueGrey[50],
       ),
       home: const LoginScreen(),
     );

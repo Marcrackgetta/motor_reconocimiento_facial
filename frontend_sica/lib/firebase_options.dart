@@ -41,46 +41,51 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDtSoYtmQGABLfwBGcA-ln9mWB_i6_K-RU',
-    appId: '1:577669516511:web:b46f09fb7a36bac2a7ed6a',
-    messagingSenderId: '577669516511',
-    projectId: 'sica-app-colegio',
-    authDomain: 'sica-app-colegio.firebaseapp.com',
-    storageBucket: 'sica-app-colegio.firebasestorage.app',
+    apiKey: 'AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU',
+    appId: '1:939488062488:web:fa939b5ee7535a1089a76d',
+    messagingSenderId: '939488062488',
+    projectId: 'motor-c7e0d',
+    authDomain: 'motor-c7e0d.firebaseapp.com',
+    databaseURL: 'https://motor-c7e0d-default-rtdb.firebaseio.com',
+    storageBucket: 'motor-c7e0d.firebasestorage.app',
+    measurementId: 'G-VYYSKWPDCS',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDDPPd6aQrpjzPnFebQwC4MpTHMQgY9fKs',
-    appId: '1:577669516511:android:6dd5fa0cf855a446a7ed6a',
-    messagingSenderId: '577669516511',
-    projectId: 'sica-app-colegio',
-    storageBucket: 'sica-app-colegio.firebasestorage.app',
+    apiKey: 'AIzaSyBxWlnITnkAFluSG6BUhz4aMZmLXwoMs-U',
+    appId: '1:939488062488:android:a9e4d703592d5caf89a76d',
+    messagingSenderId: '939488062488',
+    projectId: 'motor-c7e0d',
+    databaseURL: 'https://motor-c7e0d-default-rtdb.firebaseio.com',
+    storageBucket: 'motor-c7e0d.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBamsj1LbGpls0aITqn5zci0rRrOe5W0eI',
-    appId: '1:577669516511:ios:5d09039cd8e5872ea7ed6a',
-    messagingSenderId: '577669516511',
-    projectId: 'sica-app-colegio',
-    storageBucket: 'sica-app-colegio.firebasestorage.app',
+    apiKey: 'AIzaSyA3432wtsDzofKny8YelsQ48ZKi1zC1V4c',
+    appId: '1:939488062488:ios:ee6ee6e6d407bf8389a76d',
+    messagingSenderId: '939488062488',
+    projectId: 'motor-c7e0d',
+    databaseURL: 'https://motor-c7e0d-default-rtdb.firebaseio.com',
+    storageBucket: 'motor-c7e0d.firebasestorage.app',
     iosBundleId: 'com.example.frontendSica',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBamsj1LbGpls0aITqn5zci0rRrOe5W0eI',
-    appId: '1:577669516511:ios:5d09039cd8e5872ea7ed6a',
-    messagingSenderId: '577669516511',
-    projectId: 'sica-app-colegio',
-    storageBucket: 'sica-app-colegio.firebasestorage.app',
+    apiKey: 'AIzaSyA3432wtsDzofKny8YelsQ48ZKi1zC1V4c',
+    appId: '1:939488062488:ios:ee6ee6e6d407bf8389a76d',
+    messagingSenderId: '939488062488',
+    projectId: 'motor-c7e0d',
+    databaseURL: 'https://motor-c7e0d-default-rtdb.firebaseio.com',
+    storageBucket: 'motor-c7e0d.firebasestorage.app',
     iosBundleId: 'com.example.frontendSica',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDtSoYtmQGABLfwBGcA-ln9mWB_i6_K-RU',
-    appId: '1:577669516511:web:ec99e91879439147a7ed6a',
-    messagingSenderId: '577669516511',
-    projectId: 'sica-app-colegio',
-    authDomain: 'sica-app-colegio.firebaseapp.com',
-    storageBucket: 'sica-app-colegio.firebasestorage.app',
+    apiKey: 'AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU',
+    appId: '1:939488062488:web:a8b5c6e533b6b7bf89a76d',
+    messagingSenderId: '939488062488',
+    projectId: 'motor-c7e0d',
+    authDomain: 'motor-c7e0d.firebaseapp.com',
+    databaseURL: 'https://motor-c7e0d-default-rtdb.firebaseio.com',
+    storageBucket: 'motor-c7e0d.firebasestorage.app',
+    measurementId: 'G-TQDSW3FS90',
   );
 }
