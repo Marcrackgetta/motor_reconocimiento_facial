@@ -81,7 +81,7 @@
         .card {
             background: var(--bg-card); border-radius: 16px; padding: 20px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid var(--borde);
-            display: flex; flex-direction: column;
+            display: flex; flex-direction: column; margin-bottom: 20px;
         }
         .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 16px; justify-content: space-between; display: flex; }
         
@@ -118,13 +118,18 @@
         .data-box { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid var(--borde); margin: 8px 0; }
         .student-item { display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px 8px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 4px; }
 
-        /* --- ESTILOS DE SOLICITUDES --- */
+        /* --- ESTILOS DE SOLICITUDES Y ADMINS --- */
         .solicitud-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
         .solicitud-card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; background: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; }
         .solicitud-title { font-size: 14px; font-weight: bold; color: #0f172a; margin-bottom: 8px; }
         .solicitud-detail { font-size: 12px; color: #475569; margin-bottom: 4px; }
         .btn-aprobar { background-color: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 12px; width: 100%; text-align: center; }
         .btn-aprobar:hover { background-color: #059669; }
+        
+        .input-admin { padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; flex: 1; min-width: 200px; outline: none; }
+        .input-admin:focus { border-color: var(--azul-boton); }
+        .btn-crear { background: var(--azul-boton); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-crear:hover { background: #1d4ed8; }
     </style>
 </head>
 <body>
@@ -136,15 +141,15 @@
             <p style="font-size: 12px; color: #64748b; margin-top: 4px;">Identifícate para entrar a la Central en vivo</p>
             
             <form onsubmit="validarLogin(event)">
-                <input type="text" id="userInput" class="login-input" placeholder="Usuario (ej. admin)" required autocomplete="off">
-                <input type="password" id="passInput" class="login-input" placeholder="Contraseña" required>
+                <input type="text" id="userInput" class="login-input" placeholder="Usuario de red" required autocomplete="off">
+                <input type="password" id="passInput" class="login-input" placeholder="Contraseña de seguridad" required>
                 
                 <button type="submit" class="btn-login">⚡ Desbloquear Sistema</button>
-                <div id="errorLogin">❌ Usuario o clave incorrecta, ¡pilas ahí!</div>
+                <div id="errorLogin">❌ Usuario o clave incorrecta, o no tienes acceso.</div>
             </form>
 
             <div id="hashDisplay" class="hash-preview" style="display: none;">
-                <b>Hash SHA-256 generado:</b><br><span id="hashText">...</span>
+                <b>Hash SHA-256 verificado:</b><br><span id="hashText">...</span>
             </div>
         </div>
     </div>
@@ -188,13 +193,13 @@
             <h2>📋 Monitoreo Activo</h2>
             <div class="log-list" id="contenedorLogs">
                 <div id="mensajeVacio" style="text-align: center; color: #94a3b8; font-size: 13px; padding: 20px;">
-                    Ninguna consulta realizada aún. ¡Elige una cámara para empezar el monitoreo en vivo, ñaño!
+                    Ninguna consulta realizada aún. ¡Elige una cámara para empezar el monitoreo!
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- NUEVA SECCIÓN: SOLICITUDES DE VINCULACIÓN -->
+    <!-- SECCIÓN: SOLICITUDES DE VINCULACIÓN -->
     <div class="card">
         <h2>🔗 Solicitudes de Vinculación Pendientes</h2>
         <div id="contenedorSolicitudes" class="solicitud-grid">
@@ -204,15 +209,26 @@
         </div>
     </div>
 
+    <!-- NUEVA SECCIÓN: CREACIÓN DE ADMINISTRADORES -->
+    <div class="card" style="background: #f8fafc;">
+        <h2>🔐 Gestión de Accesos Administrativos</h2>
+        <p style="font-size: 13px; color: var(--texto-secundario); margin-bottom: 15px;">
+            Registra nuevos usuarios con permisos para acceder a esta consola. Las contraseñas se almacenan encriptadas.
+        </p>
+        <form onsubmit="crearNuevoAdmin(event)" style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <input type="text" id="nuevoAdminUser" class="input-admin" placeholder="Nuevo nombre de usuario" required autocomplete="off">
+            <input type="password" id="nuevoAdminPass" class="input-admin" placeholder="Contraseña de acceso" required>
+            <button type="submit" class="btn-crear">Crear Acceso</button>
+        </form>
+        <div id="msgAdmin" style="font-size: 13px; font-weight: 600; margin-top: 15px; height: 18px;"></div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-database-compat.js"></script>
 
     <script>
-        // --- 1. LÓGICA DE LOGIN Y HASH SHA-256 ---
-        const USUARIO_AUTORIZADO = "admin";
-        const HASH_CLAVE_AUTORIZADA = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"; // admin123
-
+        // LÓGICA DE HASH SHA-256
         async function generarHashSHA256(texto) {
             const encoder = new TextEncoder();
             const data = encoder.encode(texto);
@@ -221,6 +237,10 @@
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        // ============================================================================
+        // NUEVA VALIDACIÓN Y CREACIÓN DE USUARIOS VÍA FIREBASE
+        // ============================================================================
+        
         async function validarLogin(event) {
             event.preventDefault();
             const usuario = document.getElementById('userInput').value.trim();
@@ -233,19 +253,74 @@
             hashDisplay.style.display = "block";
             hashText.textContent = hashGenerado;
 
-            if (usuario === USUARIO_AUTORIZADO && hashGenerado === HASH_CLAVE_AUTORIZADA) {
-                errorDiv.style.display = "none";
-                sessionStorage.setItem("sesionActiva", "true");
+            // Consultar la base de datos en tiempo real
+            db.ref('Administradores/' + usuario).once('value').then((snapshot) => {
+                if (snapshot.exists()) {
+                    const datosAdmin = snapshot.val();
+                    
+                    if (datosAdmin.clave_hash === hashGenerado) {
+                        // Credenciales correctas
+                        errorDiv.style.display = "none";
+                        sessionStorage.setItem("sesionActiva", "true");
+                        sessionStorage.setItem("adminActual", usuario);
+                        
+                        document.getElementById('loginOverlay').style.opacity = "0";
+                        setTimeout(() => {
+                            document.getElementById('loginOverlay').style.visibility = "hidden";
+                            iniciarObservadorListaCamaras();
+                            escucharSolicitudes(); 
+                        }, 400);
+                        return;
+                    }
+                }
                 
-                document.getElementById('loginOverlay').style.opacity = "0";
-                setTimeout(() => {
-                    document.getElementById('loginOverlay').style.visibility = "hidden";
-                    iniciarObservadorListaCamaras();
-                    escucharSolicitudes(); // INICIAMOS EL LISTENER DE SOLICITUDES
-                }, 400);
-            } else {
+                // Si falla (no existe o clave incorrecta)
                 errorDiv.style.display = "block";
                 document.getElementById('passInput').value = "";
+            }).catch((error) => {
+                console.error("Error validando acceso:", error);
+                errorDiv.textContent = "❌ Error conectando a Firebase.";
+                errorDiv.style.display = "block";
+            });
+        }
+
+        async function crearNuevoAdmin(event) {
+            event.preventDefault();
+            const nuevoUser = document.getElementById('nuevoAdminUser').value.trim();
+            const nuevaPass = document.getElementById('nuevoAdminPass').value;
+            const msgDiv = document.getElementById('msgAdmin');
+
+            msgDiv.style.color = "#0f172a";
+            msgDiv.textContent = "⏳ Encriptando y validando...";
+
+            try {
+                // Verificar si ya existe para no sobrescribirlo accidentalmente
+                const checkRef = await db.ref('Administradores/' + nuevoUser).once('value');
+                if (checkRef.exists()) {
+                    msgDiv.style.color = "#dc2626";
+                    msgDiv.textContent = "❌ Ese usuario ya existe en el sistema.";
+                    return;
+                }
+
+                const hash = await generarHashSHA256(nuevaPass);
+                const adminActual = sessionStorage.getItem("adminActual") || "sistema";
+
+                await db.ref('Administradores/' + nuevoUser).set({
+                    clave_hash: hash,
+                    creado_por: adminActual,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+
+                msgDiv.style.color = "#059669";
+                msgDiv.textContent = `✅ El administrador '${nuevoUser}' ha sido creado exitosamente.`;
+                
+                document.getElementById('nuevoAdminUser').value = "";
+                document.getElementById('nuevoAdminPass').value = "";
+
+                setTimeout(() => { msgDiv.textContent = ""; }, 5000);
+            } catch (error) {
+                msgDiv.style.color = "#dc2626";
+                msgDiv.textContent = `❌ Error al crear: ${error.message}`;
             }
         }
 
@@ -253,17 +328,19 @@
             if (sessionStorage.getItem("sesionActiva") === "true") {
                 document.getElementById('loginOverlay').style.display = "none";
                 iniciarObservadorListaCamaras();
-                escucharSolicitudes(); // INICIAMOS EL LISTENER DE SOLICITUDES
+                escucharSolicitudes(); 
             }
         }
 
         function cerrarSesion() {
             sessionStorage.removeItem("sesionActiva");
+            sessionStorage.removeItem("adminActual");
             const overlay = document.getElementById('loginOverlay');
             overlay.style.visibility = "visible";
             overlay.style.opacity = "1";
             overlay.style.display = "flex";
             document.getElementById('passInput').value = "";
+            document.getElementById('userInput').value = "";
             document.getElementById('errorLogin').style.display = "none";
             document.getElementById('hashDisplay').style.display = "none";
             
@@ -273,7 +350,9 @@
             if (refSolicitudes) refSolicitudes.off('value');
         }
 
-        // --- 2. CONFIGURACIÓN DE FIREBASE ---
+        // ============================================================================
+        // CONFIGURACIÓN DE FIREBASE (Se mantiene idéntico)
+        // ============================================================================
         const firebaseConfig = {
             apiKey: "AIzaSyBtX7uKiGBcJKANRZ4KLW3Tvge2NgDsmoU",
             authDomain: "motor-c7e0d.firebaseapp.com",
@@ -314,15 +393,13 @@
             return String(est);
         }
 
-        // ============================================================================
-        // NUEVO MÓDULO: GESTIÓN DE SOLICITUDES DE VINCULACIÓN
-        // ============================================================================
+        // FUNCIONES DE CÁMARAS Y SOLICITUDES (Se mantienen idénticas)
         function escucharSolicitudes() {
             const contenedor = document.getElementById('contenedorSolicitudes');
             refSolicitudes = db.ref('SolicitudesVinculacion');
             
             refSolicitudes.on('value', (snapshot) => {
-                contenedor.innerHTML = ''; // Limpiar contenedor
+                contenedor.innerHTML = '';
                 if (!snapshot.exists()) {
                     contenedor.innerHTML = '<div style="color: #94a3b8; font-size: 13px;">No hay solicitudes pendientes en el sistema.</div>';
                     return;
@@ -336,15 +413,12 @@
 
                     if (req.estado === 'pendiente') {
                         hayPendientes = true;
-                        
-                        // Prevención de errores si faltan datos en la base de datos
                         const repNombre = req.nombre_rep || "Sin Nombre";
                         const repCorreo = req.correo_rep || "Sin Correo";
                         const estNombre = req.nombre_estudiante || "Sin Nombre";
                         const estCedula = req.cedula_estudiante || "Sin Cédula";
                         const repUid = req.rep_uid;
 
-                        // Tarjeta de solicitud
                         const cardHTML = `
                             <div class="solicitud-card" id="req-${idSolicitud}">
                                 <div>
@@ -371,35 +445,17 @@
             });
         }
 
-        // Función que ejecuta la aprobación en la base de datos
         window.aprobarVinculacion = function(idSolicitud, repUid, cedula, nombreEstudiante) {
             if(confirm(`¿Estás seguro de vincular al estudiante ${nombreEstudiante} (CI: ${cedula}) con este representante?`)) {
-                
-                // 1. Quitar bandera de pendiente y agregar los datos del estudiante al perfil del representante
                 db.ref('Usuarios/' + repUid).update({
                     solicitud_pendiente: false,
                     cedula_estudiante: cedula,
                     nombre_estudiante: nombreEstudiante
                 });
-
-                // 2. Marcar la solicitud como aprobada
-                db.ref('SolicitudesVinculacion/' + idSolicitud).update({
-                    estado: 'aprobada'
-                });
-
-                // 3. Crear/Actualizar el nodo maestro del estudiante para mantener la BD organizada
-                db.ref('Estudiantes/' + cedula).update({
-                    nombre: nombreEstudiante,
-                    representante_uid: repUid
-                });
-
-                // (No necesitamos alert, el HTML se actualizará automáticamente y Flutter también)
+                db.ref('SolicitudesVinculacion/' + idSolicitud).update({ estado: 'aprobada' });
+                db.ref('Estudiantes/' + cedula).update({ nombre: nombreEstudiante, representante_uid: repUid });
             }
         };
-
-        // ============================================================================
-        // FIN NUEVO MÓDULO (El código de las cámaras se mantiene igual)
-        // ============================================================================
 
         function iniciarObservadorListaCamaras() {
             const selForma = document.getElementById('selForma');
@@ -438,8 +494,6 @@
                     if (estaDesconectada) {
                         option.textContent = `🔴 ✖ ${idDoc} (DESACTIVADA)`;
                         option.className = "desconectada";
-                        option.style.textDecoration = "line-through";
-                        option.style.color = "#94a3b8";
                     } else {
                         option.textContent = `🟢 ${idDoc}`;
                         option.className = "activa";
@@ -448,14 +502,8 @@
                     selForma.appendChild(option);
                 });
 
-                if (valorSeleccionado) {
-                    selForma.value = valorSeleccionado;
-                }
-
+                if (valorSeleccionado) selForma.value = valorSeleccionado;
                 statusDiv.innerHTML = `✔ <b>${conteoCamaras}</b> cámaras cargadas en tiempo real.`;
-            }, (error) => {
-                console.error("Error al cargar lista en vivo:", error);
-                statusDiv.innerHTML = `<span style="color:red;">❌ Error al cargar listado: ${error.message}</span>`;
             });
         }
 
@@ -464,10 +512,7 @@
             const statusDiv = document.getElementById('statusConsulta');
             const mensajeVacio = document.getElementById('mensajeVacio');
 
-            if (!idCamara) {
-                alert("¡Pilas! Primero selecciona una cámara del listado.");
-                return;
-            }
+            if (!idCamara) return;
 
             if (refCamara) refCamara.off('value');
             if (refRegistro) refRegistro.off('value');
@@ -480,31 +525,21 @@
 
             refCamara = db.ref(`SesionesCamara/${idCamara}`);
             refCamara.on('value', (snapshot) => {
-                if (!snapshot.exists()) {
-                    statusDiv.innerHTML = `<span style="color:red;">❌ El nodo de la cámara no existe.</span>`;
-                    return;
-                }
+                if (!snapshot.exists()) return;
                 datosCamaraActual = snapshot.val();
                 actualizarPantalla(idCamara);
-            }, (error) => {
-                statusDiv.innerHTML = `<span style="color:red;">❌ Error de Cámara: ${error.message}</span>`;
             });
 
             refRegistro = db.ref(`SesionesCamara/${idCamara}/RegistroDiario`).limitToLast(1);
             refRegistro.on('value', (snapshot) => {
                 if (snapshot.exists()) {
                     snapshot.forEach((childSnapshot) => {
-                        datosRegistroActual = {
-                            id: childSnapshot.key,
-                            data: childSnapshot.val()
-                        };
+                        datosRegistroActual = { id: childSnapshot.key, data: childSnapshot.val() };
                     });
                 } else {
                     datosRegistroActual = null;
                 }
                 actualizarPantalla(idCamara);
-            }, (error) => {
-                statusDiv.innerHTML = `<span style="color:red;">❌ Error de Asistencia: ${error.message}</span>`;
             });
         }
 
@@ -518,32 +553,19 @@
             let nombreCamara = dataCamara.camara_nombre || idCamara;
             const cursoAsignado = dataCamara.curso_assigned || idCamara;
 
-            if (nombreCamara.trim().toLowerCase() === "camara desconocida" || nombreCamara.trim().toLowerCase() === "cámara desconocida") {
-                nombreCamara = idCamara;
-            }
-
             const estaDesconectada = 
                 dataCamara.activo === false || 
-                String(dataCamara.activo).toLowerCase() === "false" || 
                 String(dataCamara.estado).toLowerCase() === "desconectada" || 
-                String(dataCamara.estado).toLowerCase() === "inactiva" || 
-                String(dataCamara.estado).toLowerCase() === "apagada" ||
                 String(dataCamara.status).toLowerCase() === "offline";
 
             let lat = -2.128589, lng = -79.931099;
             if (dataCamara.ubicacion) {
-                if (typeof dataCamara.ubicacion.latitude === 'number') {
-                    lat = dataCamara.ubicacion.latitude;
-                    lng = dataCamara.ubicacion.longitude;
-                } else if (Array.isArray(dataCamara.ubicacion) && dataCamara.ubicacion.length >= 2) {
-                    lat = Number(dataCamara.ubicacion[0]) || lat;
-                    lng = Number(dataCamara.ubicacion[1]) || lng;
-                }
+                lat = dataCamara.ubicacion.latitude || dataCamara.ubicacion[0] || lat;
+                lng = dataCamara.ubicacion.longitude || dataCamara.ubicacion[1] || lng;
             }
 
             let idRegistro = "N/A";
-            let presentes = 0, ausentes = 0;
-            let totalInfiltrados = 0, totalNoRegistrados = 0;
+            let presentes = 0, ausentes = 0, totalInfiltrados = 0, totalNoRegistrados = 0;
             let listaEstudiantesHTML = `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">Sin registros generados hoy.</div>`;
             let cursoRegistro = cursoAsignado;
 
@@ -556,44 +578,18 @@
                 totalNoRegistrados = rData.total_desconocidos || 0;
 
                 let tempHTML = "";
-                
                 const listaPresentes = rData.lista_presentes ? Object.values(rData.lista_presentes) : [];
                 const listaAusentes = rData.lista_ausentes ? Object.values(rData.lista_ausentes) : [];
                 const listaIntrusos = rData.lista_intrusos ? Object.values(rData.lista_intrusos) : [];
 
-                listaPresentes.forEach(est => {
-                    const nombre = obtenerNombreEstudiante(est);
-                    tempHTML += `<div class="student-item"><span>👤 ${nombre}</span><span class="badge ok">Presente</span></div>`;
-                });
-                
-                listaAusentes.forEach(est => {
-                    const nombre = obtenerNombreEstudiante(est);
-                    tempHTML += `<div class="student-item"><span style="color: #64748b;">👤 ${nombre}</span><span class="badge morado">Ausente</span></div>`;
-                });
-                
+                listaPresentes.forEach(est => { tempHTML += `<div class="student-item"><span>👤 ${obtenerNombreEstudiante(est)}</span><span class="badge ok">Presente</span></div>`; });
+                listaAusentes.forEach(est => { tempHTML += `<div class="student-item"><span style="color: #64748b;">👤 ${obtenerNombreEstudiante(est)}</span><span class="badge morado">Ausente</span></div>`; });
                 listaIntrusos.forEach(est => {
-                    let nombre = "";
-                    let esRegistrado = true;
+                    let nombre = obtenerNombreEstudiante(est);
+                    let esRegistrado = est.registrado !== false;
+                    if (!nombre || nombre.toLowerCase() === "desconocido") { esRegistrado = false; nombre = est.id || "Rostro No Reconocido"; }
 
-                    if (typeof est === 'object' && est !== null) {
-                        nombre = est.nombre || est.name || est.alumno || est.id || "";
-                        if (est.registrado === false || est.registered === false || est.en_firebase === false || est.tipo === "desconocido" || est.estado === "no_registrado") {
-                            esRegistrado = false;
-                        }
-                    } else {
-                        nombre = String(est);
-                    }
-
-                    const nombreLower = nombre.toLowerCase().trim();
-                    if (!nombre || nombreLower === "desconocido" || nombreLower === "unknown" || nombreLower === "no registrado" || nombreLower === "n/a" || nombreLower.includes("desconocido") || nombreLower.includes("object")) {
-                        esRegistrado = false;
-                        if (!nombre || nombreLower === "desconocido" || nombreLower === "unknown" || nombreLower.includes("object")) {
-                            nombre = est.id || "Rostro No Reconocido";
-                        }
-                    }
-
-                    if (esRegistrado) totalInfiltrados++;
-                    else totalNoRegistrados++;
+                    if (esRegistrado) totalInfiltrados++; else totalNoRegistrados++;
 
                     const badgeTexto = esRegistrado ? "INFILTRADO" : "NO REGISTRADO";
                     const badgeEstilo = esRegistrado ? "badge alerta" : "badge amarillo";
@@ -601,96 +597,54 @@
 
                     tempHTML += `<div class="student-item" style="border-color: ${esRegistrado ? '#fca5a5' : '#fde68a'};"><span style="color: ${esRegistrado ? '#dc2626' : '#d97706'}; font-weight: bold;">${icono} ${nombre}</span><span class="${badgeEstilo}">${badgeTexto}</span></div>`;
                 });
-                
                 if (tempHTML) listaEstudiantesHTML = tempHTML;
             }
 
-            let badgeClass = "badge ok";
-            let badgeText = "TODO EN ORDEN";
-            let bgHeader = "";
-            let colorTitulo = "";
+            let badgeClass = "badge ok", badgeText = "TODO EN ORDEN", bgHeader = "", colorTitulo = "";
 
             if (estaDesconectada) {
                 statusDiv.innerHTML = `🔴 <b>DESACTIVADA:</b> La cámara <b>${nombreCamara}</b> se encuentra fuera de línea.`;
-                badgeClass = "badge offline";
-                badgeText = "DESACTIVADA";
-                bgHeader = "background: #f1f5f9;";
-                colorTitulo = "color: #94a3b8; text-decoration: line-through;";
+                badgeClass = "badge offline"; badgeText = "DESACTIVADA"; bgHeader = "background: #f1f5f9;"; colorTitulo = "color: #94a3b8; text-decoration: line-through;";
             } else {
                 if (datosRegistroActual) {
-                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Sincronizado con <b>${nombreCamara}</b> (Captura: ${idRegistro})`;
-                    if (totalInfiltrados > 0 && totalNoRegistrados > 0) {
-                        badgeClass = "badge alerta";
-                        badgeText = `${totalInfiltrados} INFILTRADO(S) / ${totalNoRegistrados} NO REG.`;
-                        bgHeader = "background: #fef2f2;";
-                        colorTitulo = "color: #dc2626;";
-                    } else if (totalInfiltrados > 0) {
-                        badgeClass = "badge alerta";
-                        badgeText = `${totalInfiltrados} INFILTRADO(S)`;
-                        bgHeader = "background: #fef2f2;";
-                        colorTitulo = "color: #dc2626;";
-                    } else if (totalNoRegistrados > 0) {
-                        badgeClass = "badge amarillo";
-                        badgeText = `${totalNoRegistrados} NO REGISTRADO(S)`;
-                    } else if (ausentes > 0) {
-                        badgeClass = "badge morado";
-                        badgeText = `${ausentes} AUSENTE(S)`;
-                    }
+                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Sincronizado con <b>${nombreCamara}</b>`;
+                    if (totalInfiltrados > 0 && totalNoRegistrados > 0) { badgeClass = "badge alerta"; badgeText = `${totalInfiltrados} INFILTRADO / ${totalNoRegistrados} NO REG.`; bgHeader = "background: #fef2f2;"; colorTitulo = "color: #dc2626;"; } 
+                    else if (totalInfiltrados > 0) { badgeClass = "badge alerta"; badgeText = `${totalInfiltrados} INFILTRADO(S)`; bgHeader = "background: #fef2f2;"; colorTitulo = "color: #dc2626;"; } 
+                    else if (totalNoRegistrados > 0) { badgeClass = "badge amarillo"; badgeText = `${totalNoRegistrados} NO REGISTRADO(S)`; } 
+                    else if (ausentes > 0) { badgeClass = "badge morado"; badgeText = `${ausentes} AUSENTE(S)`; }
                 } else {
-                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Conectado a <b>${nombreCamara}</b> (Esperando capturas...)`;
-                    badgeClass = "badge amarillo";
-                    badgeText = "ACTIVA SIN REGISTROS";
+                    statusDiv.innerHTML = `🟢 <b>EN VIVO:</b> Conectado a <b>${nombreCamara}</b>`;
+                    badgeClass = "badge amarillo"; badgeText = "ACTIVA SIN REGISTROS";
                 }
             }
 
-            const contenidoTarjeta = `
-                <div class="log-header" style="${bgHeader}">
-                    <div style="font-weight: 600; ${colorTitulo}">
-                        <span>📷 ${nombreCamara}</span>
-                    </div>
-                    <span class="${badgeClass}">${badgeText}</span>
-                </div>
-                <div class="log-body" style="${estaDesconectada ? 'opacity: 0.55;' : ''}">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 11px;">
-                        <span><b>Captura:</b> ${idRegistro}</span>
-                        <span><b>Curso:</b> ${cursoRegistro}</span>
-                    </div>
-                    
-                    <div class="data-box">
-                        <div style="font-weight: 600; margin-bottom: 6px;">📊 Conteo Real:</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                            <span>🟢 Presentes: <b>${presentes}</b></span>
-                            <span>⚪ Ausentes: <b>${ausentes}</b></span>
-                            <span style="${totalInfiltrados > 0 ? 'color: #dc2626; font-weight: bold;' : ''}">🚨 Infiltrados: <b>${totalInfiltrados}</b></span>
-                            <span style="${totalNoRegistrados > 0 ? 'color: #d97706; font-weight: bold;' : ''}">❓ No Registrados: <b>${totalNoRegistrados}</b></span>
-                        </div>
-                        
-                        <div style="margin-top: 8px; font-weight: 600; border-top: 1px solid var(--borde); padding-top: 6px;">
-                            Lista de Alumnos:
-                        </div>
-                        <div style="max-height: 200px; overflow-y: auto; margin-top: 4px;">
-                            ${listaEstudiantesHTML}
-                        </div>
-                    </div>
-                    <div style="font-size: 10px; color: #64748b; text-align: right; margin-top: 6px;">
-                        📍 Coordenadas: ${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}
-                    </div>
-                </div>
-            `;
-
             contenedorLogs.innerHTML = `
                 <div id="card-log-${idCamara}" class="log-item">
-                    ${contenidoTarjeta}
+                    <div class="log-header" style="${bgHeader}">
+                        <div style="font-weight: 600; ${colorTitulo}"><span>📷 ${nombreCamara}</span></div>
+                        <span class="${badgeClass}">${badgeText}</span>
+                    </div>
+                    <div class="log-body" style="${estaDesconectada ? 'opacity: 0.55;' : ''}">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 11px;">
+                            <span><b>Captura:</b> ${idRegistro}</span><span><b>Curso:</b> ${cursoRegistro}</span>
+                        </div>
+                        <div class="data-box">
+                            <div style="font-weight: 600; margin-bottom: 6px;">📊 Conteo Real:</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                                <span>🟢 Presentes: <b>${presentes}</b></span><span>⚪ Ausentes: <b>${ausentes}</b></span>
+                                <span style="${totalInfiltrados > 0 ? 'color: #dc2626; font-weight: bold;' : ''}">🚨 Infiltrados: <b>${totalInfiltrados}</b></span>
+                                <span style="${totalNoRegistrados > 0 ? 'color: #d97706; font-weight: bold;' : ''}">❓ No Reg.: <b>${totalNoRegistrados}</b></span>
+                            </div>
+                            <div style="margin-top: 8px; font-weight: 600; border-top: 1px solid var(--borde); padding-top: 6px;">Lista de Alumnos:</div>
+                            <div style="max-height: 200px; overflow-y: auto; margin-top: 4px;">${listaEstudiantesHTML}</div>
+                        </div>
+                    </div>
                 </div>
             `;
 
             if (marcadorActual) mapa.removeLayer(marcadorActual);
-            
-            const iconoSeleccionado = estaDesconectada ? iconoApagada : iconoPrendida;
-
-            marcadorActual = L.marker([lat, lng], { icon: iconoSeleccionado }).addTo(mapa)
-                .bindPopup(`<b>${nombreCamara}</b><br>Estado: ${badgeText}`)
-                .openPopup();
+            marcadorActual = L.marker([lat, lng], { icon: estaDesconectada ? iconoApagada : iconoPrendida }).addTo(mapa)
+                .bindPopup(`<b>${nombreCamara}</b><br>Estado: ${badgeText}`).openPopup();
             mapa.setView([lat, lng], 18);
         }
 

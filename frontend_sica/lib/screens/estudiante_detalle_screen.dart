@@ -12,7 +12,6 @@ class EstudianteDetalleScreen extends StatefulWidget {
 }
 
 class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
-  // Ahora usamos una lista de Mapas para extraer directamente la data de Firebase
   List<Map<String, dynamic>> _notificaciones = [];
   bool _isLoading = true;
 
@@ -22,7 +21,6 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
     _escucharNotificaciones();
   }
 
-  // NUEVO: Escuchador en tiempo real desde Firebase
   void _escucharNotificaciones() {
     final dbRef = FirebaseDatabase.instance.ref('SesionesCamara/CAM_001/RegistroDiario');
     
@@ -36,7 +34,6 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
         data.forEach((key, value) {
           final registro = value as Map<dynamic, dynamic>;
           
-          // Verificamos si hay presentes y si nuestro estudiante está en esa lista
           if (registro['lista_presentes'] != null) {
             final presentes = registro['lista_presentes'] as Map<dynamic, dynamic>;
             
@@ -56,7 +53,6 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
           }
         });
 
-        // Ordenamos para que la notificación más reciente salga arriba
         listaTemporal.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
 
         setState(() {
@@ -77,16 +73,20 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
     return DefaultTabController(
       length: 2, 
       child: Scaffold(
-        backgroundColor: Colors.grey[100],
+        backgroundColor: Colors.blueGrey[50], // Fondo claro idéntico al Dashboard
         appBar: AppBar(
-          backgroundColor: Colors.amber[400],
-          iconTheme: const IconThemeData(color: Colors.black87),
-          title: const Text('DETALLE DE ALUMNO', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.blueGrey[800], // Azul grisáceo oscuro elegante
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          title: const Text(
+            'Detalle de Alumno', 
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)
+          ),
           centerTitle: true,
           bottom: const TabBar(
-            labelColor: Colors.black87,
-            unselectedLabelColor: Colors.black54,
-            indicatorColor: Colors.black87,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white54,
+            indicatorColor: Colors.white,
             indicatorWeight: 3,
             tabs: [
               Tab(text: 'Notificaciones'),
@@ -106,29 +106,50 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
 
   Widget _construirTabNotificaciones() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.amber));
+      return Center(child: CircularProgressIndicator(color: Colors.blueGrey[800]));
     }
 
     return Column(
       children: [
-        // Encabezado del estudiante
+        // Encabezado del estudiante estilo Minimalista (igual al Dashboard)
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          color: Colors.white,
-          child: Text(
-            widget.estudiante.nombreCompleto.toUpperCase(),
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-            textAlign: TextAlign.center,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: Colors.blueGrey[50],
+                child: Icon(Icons.person, color: Colors.blueGrey[800], size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Historial de', style: TextStyle(fontSize: 13, color: Colors.black54)),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.estudiante.nombreCompleto.toUpperCase(),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         
         // Lista de Notificaciones o Estado Vacío
         Expanded(
           child: _notificaciones.isEmpty
-              ? _construirAlertaVacia("¡No hay notificaciones recientes\npara este alumno!")
+              ? _construirAlertaVacia("No hay notificaciones\nrecientes para este alumno.")
               : ListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   itemCount: _notificaciones.length,
                   itemBuilder: (context, index) {
                     final notificacion = _notificaciones[index];
@@ -137,36 +158,44 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
                 ),
         ),
 
-        // Botones inferiores
+        // Botones inferiores minimalistas
         Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.white,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.history, color: Colors.black87),
-                label: const Text('Historial', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber[300],
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                  elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Colors.grey[200]!)),
+          ),
+          child: SafeArea(
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {},
+                    icon: Icon(Icons.history, color: Colors.blueGrey[800], size: 20),
+                    label: Text('Historial', style: TextStyle(color: Colors.blueGrey[800], fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.blueGrey[200]!),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                 ),
-              ),
-              ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF5252), // Rojo de la imagen
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                  elevation: 0,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[50], // Fondo rojo muy suave
+                      foregroundColor: Colors.red[700], // Texto rojo oscuro
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Reportar Falta', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
                 ),
-                child: const Text('No asiste', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
@@ -177,23 +206,48 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
     bool esEntrada = notificacion['tipo'] == 'ENTRADA';
     
     return Card(
-      color: esEntrada ? Colors.green[50] : Colors.blue[50],
-      elevation: 0,
+      color: Colors.white,
+      elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.05),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: esEntrada ? Colors.green[200]! : Colors.blue[200]!, width: 1),
+        borderRadius: BorderRadius.circular(16),
       ),
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(
-          esEntrada ? Icons.login : Icons.logout,
-          color: esEntrada ? Colors.green[700] : Colors.blue[700],
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: esEntrada ? Colors.green[50] : Colors.blueGrey[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                esEntrada ? Icons.login : Icons.logout,
+                color: esEntrada ? Colors.green[600] : Colors.blueGrey[600],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    esEntrada ? 'Ingreso Confirmado' : 'Salida Registrada',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Hora: ${notificacion['hora']}', 
+                    style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        title: Text(
-          esEntrada ? 'Ingreso Confirmado' : 'Salida Registrada',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-        ),
-        subtitle: Text('Hora: ${notificacion['hora']}', style: const TextStyle(color: Colors.black54)),
       ),
     );
   }
@@ -201,42 +255,29 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
   Widget _construirTabNovedades() {
     return Column(
       children: [
-        Expanded(child: _construirAlertaVacia("No hay novedades registradas.")),
+        Expanded(child: _construirAlertaVacia("No hay novedades\nregistradas hoy.")),
       ],
     );
   }
 
-  // NUEVO: Rediseñado para coincidir exactamente con tu imagen de referencia
+  // Estado vacío moderno y sutil
   Widget _construirAlertaVacia(String mensaje) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7C0), // Color amarillo idéntico a la foto
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Icon(Icons.notifications_off, color: Color(0xFFFF5252), size: 28), // Icono rojo
-              const SizedBox(width: 16),
-              Flexible(
-                child: Text(
-                  mensaje, 
-                  style: const TextStyle(
-                    fontSize: 16, 
-                    color: Colors.black87,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.notifications_none_outlined, size: 64, color: Colors.blueGrey[200]),
+          const SizedBox(height: 16),
+          Text(
+            mensaje, 
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15, 
+              color: Colors.blueGrey[400],
+              height: 1.5,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

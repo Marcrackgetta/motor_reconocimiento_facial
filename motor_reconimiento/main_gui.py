@@ -17,7 +17,6 @@ from pathlib import Path
 
 from src.capture.camera_stream import CameraStream
 from src.events.event_manager import EventManager
-
 from src.network.firebase_client import FirebaseClient
 from src.storage.file_manager import FileManager
 from src.training.trainer import ModelTrainer
@@ -53,12 +52,20 @@ class FaceRecognitionGUI:
         self.view_mode = "SINGLE"
         self.streams = []
         
-        # NUEVO: Variable segura para hilos que almacena el modo actual (Entrada/Salida)
         self.current_operation_mode = "ENTRADA"
+
+        # Optimización de rendimiento: Salto de Fotogramas (Frame Skipping)
+        self.frame_counter = 0
+        self.process_every_n_frames = 3
+        self.last_faces = [] 
+        self.last_reg_faces = [] 
 
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
         self.pan_y = tk.DoubleVar(value=0.0)
+        
+        self.drag_start_x = 0
+        self.drag_start_y = 0
 
         self.root.columnconfigure(0, weight=7)
         self.root.columnconfigure(1, weight=3)
@@ -73,6 +80,10 @@ class FaceRecognitionGUI:
         self.video_frame.grid(row=0, column=0, sticky="nsew")
         self.video_label = tk.Label(self.video_frame, bg="black")
         self.video_label.pack(expand=True, fill="both")
+        
+        self.video_label.bind("<MouseWheel>", self.on_mouse_wheel)
+        self.video_label.bind("<ButtonPress-1>", self.on_mouse_press)
+        self.video_label.bind("<B1-Motion>", self.on_mouse_drag)
 
         self.control_frame = tk.Frame(self.root, bg="#2C3E50", padx=20, pady=20)
         self.control_frame.grid(row=0, column=1, sticky="nsew")
@@ -82,21 +93,9 @@ class FaceRecognitionGUI:
 
         self.lbl_status = tk.Label(self.control_frame, text="Estado: Reconocimiento Activo", font=("Helvetica", 11), bg="#2C3E50", fg="#2ECC71")
         self.lbl_status.pack(pady=(0, 20))
-
-        lbl_zoom = tk.Label(self.control_frame, text="Zoom Digital", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#BDC3C7")
-        lbl_zoom.pack(pady=(10, 0))
-        self.zoom_slider = tk.Scale(self.control_frame, from_=1.0, to=4.0, resolution=0.1, orient="horizontal", variable=self.zoom_factor, bg="#2C3E50", fg="white", highlightthickness=0, troughcolor="#34495E", activebackground="#3498DB")
-        self.zoom_slider.pack(fill="x", pady=(0, 10))
-
-        lbl_pan_x = tk.Label(self.control_frame, text="Desplazamiento H. (Izquierda - Derecha)", font=("Helvetica", 9, "bold"), bg="#2C3E50", fg="#BDC3C7")
-        lbl_pan_x.pack(pady=(5, 0))
-        self.pan_x_slider = tk.Scale(self.control_frame, from_=-1.0, to=1.0, resolution=0.05, orient="horizontal", variable=self.pan_x, bg="#2C3E50", fg="white", highlightthickness=0, troughcolor="#34495E", activebackground="#3498DB")
-        self.pan_x_slider.pack(fill="x", pady=(0, 5))
-
-        lbl_pan_y = tk.Label(self.control_frame, text="Desplazamiento V. (Arriba - Abajo)", font=("Helvetica", 9, "bold"), bg="#2C3E50", fg="#BDC3C7")
-        lbl_pan_y.pack(pady=(5, 0))
-        self.pan_y_slider = tk.Scale(self.control_frame, from_=-1.0, to=1.0, resolution=0.05, orient="horizontal", variable=self.pan_y, bg="#2C3E50", fg="white", highlightthickness=0, troughcolor="#34495E", activebackground="#3498DB")
-        self.pan_y_slider.pack(fill="x", pady=(0, 20))
+        
+        lbl_instrucciones = tk.Label(self.control_frame, text="🖱️ Rueda: Zoom | Click Izq: Mover", font=("Helvetica", 10, "italic"), bg="#2C3E50", fg="#BDC3C7")
+        lbl_instrucciones.pack(pady=(0, 20))
 
         lbl_cams = tk.Label(self.control_frame, text="Selector de Cámara", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#BDC3C7")
         lbl_cams.pack(pady=(10, 5))
@@ -109,7 +108,6 @@ class FaceRecognitionGUI:
             self.cam_combo.current(0)
         self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
 
-        # NUEVO: Selector de Modo de Operación (Entrada o Salida)
         lbl_modo = tk.Label(self.control_frame, text="Propósito de la Cámara", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#F1C40F")
         lbl_modo.pack(pady=(10, 5))
         
@@ -131,7 +129,33 @@ class FaceRecognitionGUI:
         self.btn_quit = tk.Button(self.control_frame, text="Cerrar Programa", font=button_font, bg="#E74C3C", fg="white", command=self.on_closing)
         self.btn_quit.pack(fill="x", pady=10, ipady=5)
 
-    # NUEVO: Evento que actualiza el modo de operación al cambiar el desplegable
+    def on_mouse_wheel(self, event):
+        if event.delta > 0:
+            self.zoom_factor.set(min(4.0, self.zoom_factor.get() + 0.1))
+        elif event.delta < 0:
+            self.zoom_factor.set(max(1.0, self.zoom_factor.get() - 0.1))
+
+    def on_mouse_press(self, event):
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
+    def on_mouse_drag(self, event):
+        if self.zoom_factor.get() <= 1.0:
+            return
+            
+        dx = event.x - self.drag_start_x
+        dy = event.y - self.drag_start_y
+        
+        pan_speed = 0.003 / self.zoom_factor.get()
+        new_pan_x = self.pan_x.get() - (dx * pan_speed)
+        new_pan_y = self.pan_y.get() - (dy * pan_speed)
+
+        self.pan_x.set(max(-1.0, min(1.0, new_pan_x)))
+        self.pan_y.set(max(-1.0, min(1.0, new_pan_y)))
+
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
     def on_mode_select(self, event):
         self.current_operation_mode = self.modo_var.get()
         print(f"[SISTEMA] Modo de cámara cambiado a: {self.current_operation_mode}")
@@ -153,7 +177,6 @@ class FaceRecognitionGUI:
         self.event_manager = EventManager()
         self.api_client = FirebaseClient() 
 
-        # NUEVO: Iniciamos el reloj automático para procesar inasistencias a las 10:00 AM
         self.api_client.iniciar_rutina_faltas_automatica(hora_check="10:00")
 
         self.sender_thread = threading.Thread(target=self._event_sender_task, daemon=True)
@@ -174,8 +197,6 @@ class FaceRecognitionGUI:
             
             if pending_events:
                 evento_actual = pending_events[0]
-                
-                # NUEVO: Pasamos el modo actual (ENTRADA/SALIDA) a la función de Firebase
                 success = self.api_client.send_event(evento_actual, modo_operacion=self.current_operation_mode)
                 
                 if success:
@@ -249,6 +270,7 @@ class FaceRecognitionGUI:
                     display_frame = self.process_registration(frame, display_frame)
                 elif self.mode == "TRAINING":
                     cv2.putText(display_frame, "Entrenando modelo... Por favor espere", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+                
             else:
                 display_frame = self.create_connection_lost_frame()
 
@@ -291,14 +313,27 @@ class FaceRecognitionGUI:
 
         if display_frame is not None:
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(rgb_frame)
 
             label_w = self.video_label.winfo_width()
             label_h = self.video_label.winfo_height()
 
             if label_w > 10 and label_h > 10:
-                img.thumbnail((label_w, label_h), Image.Resampling.LANCZOS)
+                frame_h, frame_w = rgb_frame.shape[:2]
+                target_aspect = label_w / label_h
+                frame_aspect = frame_w / frame_h
 
+                if frame_aspect > target_aspect:
+                    new_w = int(frame_h * target_aspect)
+                    x_offset = (frame_w - new_w) // 2
+                    rgb_frame = rgb_frame[:, x_offset:x_offset + new_w]
+                else:
+                    new_h = int(frame_w / target_aspect)
+                    y_offset = (frame_h - new_h) // 2
+                    rgb_frame = rgb_frame[y_offset:y_offset + new_h, :]
+
+                rgb_frame = cv2.resize(rgb_frame, (label_w, label_h), interpolation=cv2.INTER_LINEAR)
+
+            img = Image.fromarray(rgb_frame)
             self.current_imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.configure(image=self.current_imgtk)
 
@@ -311,12 +346,16 @@ class FaceRecognitionGUI:
         stream = self.streams[stream_idx]
         camera_id = stream.camera_id
 
-        context = self.vision_engine.detect(frame)
-        context = self.tracker.update(context)
-        
-        context = self.recognition_engine.process(frame, context, self.vision_engine, camera_id)
+        self.frame_counter = (self.frame_counter + 1) % 100000
 
-        for face in context.faces:
+        if self.frame_counter % self.process_every_n_frames == 0:
+            context = self.vision_engine.detect(frame)
+            context = self.tracker.update(context)
+            context = self.recognition_engine.process(frame, context, self.vision_engine, camera_id)
+            
+            self.last_faces = context.faces 
+
+        for face in self.last_faces:
             confidence = getattr(face, "confidence", 0.0)
             identity = getattr(face, "identity_uuid", "Calculando...")
 
@@ -326,18 +365,24 @@ class FaceRecognitionGUI:
                 color = (255, 255, 0)
             else:
                 color = (0, 255, 0)
-                self.event_manager.register_recognition(identity, camera_id)
+                if self.frame_counter % self.process_every_n_frames == 0:
+                    self.event_manager.register_recognition(identity, camera_id)
 
-            cv2.rectangle(display_frame, (face.left, face.top), (face.right, face.bottom), color, 2)
+            cv2.rectangle(display_frame, (int(face.left), int(face.top)), (int(face.right), int(face.bottom)), color, 2)
 
             display_id = identity[:15] if len(identity) > 15 else identity
             label = f"{display_id} ({confidence:.1f}%)" if confidence > 0 else f"{display_id}"
-            cv2.putText(display_frame, label, (face.left, face.top - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+            cv2.putText(display_frame, label, (int(face.left), int(face.top) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
         return display_frame
 
     def process_registration(self, frame, display_frame):
-        faces = self.vision_engine.app.get(frame)
+        self.frame_counter = (self.frame_counter + 1) % 100000
+
+        if self.frame_counter % self.process_every_n_frames == 0:
+            self.last_reg_faces = self.vision_engine.app.get(frame)
+
+        faces = self.last_reg_faces
 
         if len(faces) == 1:
             face = faces[0]
@@ -351,19 +396,22 @@ class FaceRecognitionGUI:
             face_crop = frame[y1:y2, x1:x2]
 
             if face_crop.size > 0:
-                gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-                blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
-                color = (0, 0, 255)
+                color = (200, 200, 200) 
+                
+                if self.frame_counter % self.process_every_n_frames == 0:
+                    gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+                    blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
+                    color = (0, 0, 255)
 
-                if blur_variance >= BLUR_THRESHOLD and (time.time() - self.cooldown_time > 0.4):
-                    filename = os.path.join(self.person_dir, f"{self.identity_label}_{self.captured_photos:03d}.jpg")
-                    cv2.imwrite(filename, face_crop)
-                    self.captured_photos += 1
-                    self.cooldown_time = time.time()
-                    color = (0, 255, 0)
+                    if blur_variance >= BLUR_THRESHOLD and (time.time() - self.cooldown_time > 0.4):
+                        filename = os.path.join(self.person_dir, f"{self.identity_label}_{self.captured_photos:03d}.jpg")
+                        cv2.imwrite(filename, face_crop)
+                        self.captured_photos += 1
+                        self.cooldown_time = time.time()
+                        color = (0, 255, 0)
 
-                    if platform.system() == "Windows":
-                        winsound.Beep(1000, 150)
+                        if platform.system() == "Windows":
+                            winsound.Beep(1000, 150)
 
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(display_frame, f"Capturas: {self.captured_photos}/{MAX_PHOTOS_PER_PERSON}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
