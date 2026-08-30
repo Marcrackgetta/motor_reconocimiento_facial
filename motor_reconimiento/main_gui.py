@@ -18,7 +18,6 @@ from pathlib import Path
 from src.capture.camera_stream import CameraStream
 from src.events.event_manager import EventManager
 
-# CAMBIO: Importamos el nuevo cliente de Firebase
 from src.network.firebase_client import FirebaseClient
 from src.storage.file_manager import FileManager
 from src.training.trainer import ModelTrainer
@@ -53,6 +52,9 @@ class FaceRecognitionGUI:
         self.active_camera_idx = 0
         self.view_mode = "SINGLE"
         self.streams = []
+        
+        # NUEVO: Variable segura para hilos que almacena el modo actual (Entrada/Salida)
+        self.current_operation_mode = "ENTRADA"
 
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
@@ -107,8 +109,17 @@ class FaceRecognitionGUI:
             self.cam_combo.current(0)
         self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_select)
 
+        # NUEVO: Selector de Modo de Operación (Entrada o Salida)
+        lbl_modo = tk.Label(self.control_frame, text="Propósito de la Cámara", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#F1C40F")
+        lbl_modo.pack(pady=(10, 5))
+        
+        self.modo_var = tk.StringVar(value="ENTRADA")
+        self.modo_combo = ttk.Combobox(self.control_frame, textvariable=self.modo_var, values=["ENTRADA", "SALIDA"], state="readonly", font=("Helvetica", 10))
+        self.modo_combo.pack(fill="x", pady=5)
+        self.modo_combo.bind("<<ComboboxSelected>>", self.on_mode_select)
+
         btn_grid = tk.Button(self.control_frame, text="Vista General (Todas)", bg="#9B59B6", fg="white", command=self.show_grid_view)
-        btn_grid.pack(fill="x", pady=(0, 15))
+        btn_grid.pack(fill="x", pady=(15, 15))
 
         button_font = ("Helvetica", 12)
         self.btn_register = tk.Button(self.control_frame, text="Registrar Nuevo Usuario", font=button_font, bg="#3498DB", fg="white", command=self.start_registration)
@@ -119,6 +130,11 @@ class FaceRecognitionGUI:
 
         self.btn_quit = tk.Button(self.control_frame, text="Cerrar Programa", font=button_font, bg="#E74C3C", fg="white", command=self.on_closing)
         self.btn_quit.pack(fill="x", pady=10, ipady=5)
+
+    # NUEVO: Evento que actualiza el modo de operación al cambiar el desplegable
+    def on_mode_select(self, event):
+        self.current_operation_mode = self.modo_var.get()
+        print(f"[SISTEMA] Modo de cámara cambiado a: {self.current_operation_mode}")
 
     def init_backend(self):
         print("[INFO] Cargando modelo y motores de visión...")
@@ -135,8 +151,10 @@ class FaceRecognitionGUI:
         )
         
         self.event_manager = EventManager()
-        # CAMBIO: Inicializamos el cliente de Firebase
         self.api_client = FirebaseClient() 
+
+        # NUEVO: Iniciamos el reloj automático para procesar inasistencias a las 10:00 AM
+        self.api_client.iniciar_rutina_faltas_automatica(hora_check="10:00")
 
         self.sender_thread = threading.Thread(target=self._event_sender_task, daemon=True)
         self.sender_thread.start()
@@ -156,7 +174,9 @@ class FaceRecognitionGUI:
             
             if pending_events:
                 evento_actual = pending_events[0]
-                success = self.api_client.send_event(evento_actual)
+                
+                # NUEVO: Pasamos el modo actual (ENTRADA/SALIDA) a la función de Firebase
+                success = self.api_client.send_event(evento_actual, modo_operacion=self.current_operation_mode)
                 
                 if success:
                     self.event_manager.clear_events(1)

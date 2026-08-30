@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import supervision as sv
-
 from src.utils.config import TRACKER_BUFFER, TRACKER_MATCH_THRESH
 from src.vision.frame_context import FrameContext
 

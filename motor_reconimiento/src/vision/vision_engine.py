@@ -4,7 +4,6 @@ from typing import Any
 
 import numpy as np
 from insightface.app import FaceAnalysis
-
 from src.utils.config import (
     INSIGHTFACE_DET_THRESH,
     INSIGHTFACE_INPUT_SIZE,

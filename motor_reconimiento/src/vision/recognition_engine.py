@@ -4,7 +4,6 @@ import time
 from typing import Any
 
 import numpy as np
-
 from src.vision.frame_context import FrameContext
 from src.vision.vision_engine import VisionEngine
 

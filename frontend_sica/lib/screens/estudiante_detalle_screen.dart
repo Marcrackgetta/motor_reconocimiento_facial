@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../models/estudiante.dart';
-import '../models/asistencia.dart';
-import '../services/api_service.dart';
 
 class EstudianteDetalleScreen extends StatefulWidget {
   final Estudiante estudiante;
 
-  // Recibe al estudiante seleccionado desde la pantalla anterior
   const EstudianteDetalleScreen({super.key, required this.estudiante});
 
   @override
@@ -14,42 +12,72 @@ class EstudianteDetalleScreen extends StatefulWidget {
 }
 
 class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
-  final ApiService _apiService = ApiService();
-  List<Asistencia> _notificaciones = [];
+  // Ahora usamos una lista de Mapas para extraer directamente la data de Firebase
+  List<Map<String, dynamic>> _notificaciones = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _cargarNotificaciones();
+    _escucharNotificaciones();
   }
 
-  Future<void> _cargarNotificaciones() async {
-    try {
-      // Reutilizamos el endpoint del dashboard que trae los últimos eventos
-      final metrics = await _apiService.fetchDashboardMetrics();
-      
-      // Filtramos la lista para mostrar solo las asistencias de este estudiante en particular
-      setState(() {
-        _notificaciones = metrics.asistencias
-            .where((a) => a.estudianteUuid == widget.estudiante.uuid)
-            .toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+  // NUEVO: Escuchador en tiempo real desde Firebase
+  void _escucharNotificaciones() {
+    final dbRef = FirebaseDatabase.instance.ref('SesionesCamara/CAM_001/RegistroDiario');
+    
+    dbRef.onValue.listen((event) {
+      if (!mounted) return;
+
+      if (event.snapshot.exists) {
+        final data = event.snapshot.value as Map<dynamic, dynamic>;
+        List<Map<String, dynamic>> listaTemporal = [];
+
+        data.forEach((key, value) {
+          final registro = value as Map<dynamic, dynamic>;
+          
+          // Verificamos si hay presentes y si nuestro estudiante está en esa lista
+          if (registro['lista_presentes'] != null) {
+            final presentes = registro['lista_presentes'] as Map<dynamic, dynamic>;
+            
+            if (presentes.containsKey(widget.estudiante.uuid)) {
+              final tipo = registro['tipo_evento'] ?? 'ENTRADA';
+              final timestamp = (registro['timestamp'] as num).toDouble();
+              
+              final date = DateTime.fromMillisecondsSinceEpoch((timestamp * 1000).toInt());
+              final hora = "${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}";
+
+              listaTemporal.add({
+                'tipo': tipo,
+                'hora': hora,
+                'timestamp': timestamp,
+              });
+            }
+          }
+        });
+
+        // Ordenamos para que la notificación más reciente salga arriba
+        listaTemporal.sort((a, b) => b['timestamp'].compareTo(a['timestamp']));
+
+        setState(() {
+          _notificaciones = listaTemporal;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _notificaciones = [];
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Usamos DefaultTabController para manejar las pestañas fácilmente
     return DefaultTabController(
-      length: 2, // Dos pestañas: Notificaciones y Novedades
+      length: 2, 
       child: Scaffold(
-        backgroundColor: Colors.grey[200],
+        backgroundColor: Colors.grey[100],
         appBar: AppBar(
           backgroundColor: Colors.amber[400],
           iconTheme: const IconThemeData(color: Colors.black87),
@@ -78,27 +106,27 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
 
   Widget _construirTabNotificaciones() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(color: Colors.amber));
     }
 
     return Column(
       children: [
-        // Encabezado del estudiante dentro del tab
+        // Encabezado del estudiante
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(vertical: 20),
           color: Colors.white,
           child: Text(
             widget.estudiante.nombreCompleto.toUpperCase(),
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
             textAlign: TextAlign.center,
           ),
         ),
         
-        // Lista de Notificaciones
+        // Lista de Notificaciones o Estado Vacío
         Expanded(
           child: _notificaciones.isEmpty
-              ? _construirAlertaVacia("¡No hay notificaciones recientes para este alumno!")
+              ? _construirAlertaVacia("¡No hay notificaciones recientes\npara este alumno!")
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _notificaciones.length,
@@ -109,7 +137,7 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
                 ),
         ),
 
-        // Botones inferiores inspirados en la referencia
+        // Botones inferiores
         Container(
           padding: const EdgeInsets.all(16),
           color: Colors.white,
@@ -119,22 +147,24 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
               ElevatedButton.icon(
                 onPressed: () {},
                 icon: const Icon(Icons.history, color: Colors.black87),
-                label: const Text('Historial', style: TextStyle(color: Colors.black87)),
+                label: const Text('Historial', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.amber[300],
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 0,
                 ),
               ),
               ElevatedButton(
                 onPressed: () {},
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
+                  backgroundColor: const Color(0xFFFF5252), // Rojo de la imagen
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 0,
                 ),
-                child: const Text('No asiste', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: const Text('No asiste', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               ),
             ],
           ),
@@ -143,27 +173,27 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
     );
   }
 
-  Widget _construirTarjetaNotificacion(Asistencia asistencia) {
-    bool esPresente = asistencia.estado == 'PRESENTE';
+  Widget _construirTarjetaNotificacion(Map<String, dynamic> notificacion) {
+    bool esEntrada = notificacion['tipo'] == 'ENTRADA';
     
     return Card(
-      color: esPresente ? Colors.green[50] : Colors.red[50],
+      color: esEntrada ? Colors.green[50] : Colors.blue[50],
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: esPresente ? Colors.green[200]! : Colors.red[200]!, width: 1),
+        side: BorderSide(color: esEntrada ? Colors.green[200]! : Colors.blue[200]!, width: 1),
       ),
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
         leading: Icon(
-          esPresente ? Icons.notifications_active : Icons.notification_important,
-          color: esPresente ? Colors.green[700] : Colors.red[700],
+          esEntrada ? Icons.login : Icons.logout,
+          color: esEntrada ? Colors.green[700] : Colors.blue[700],
         ),
         title: Text(
-          esPresente ? 'Registro de Acceso Confirmado' : 'Alerta de Intrusión / Desconocido',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          esEntrada ? 'Ingreso Confirmado' : 'Salida Registrada',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
         ),
-        subtitle: Text('Detectado en: ${asistencia.cameraId}\nHora: ${asistencia.fechaRegistro}'),
+        subtitle: Text('Hora: ${notificacion['hora']}', style: const TextStyle(color: Colors.black54)),
       ),
     );
   }
@@ -171,27 +201,42 @@ class _EstudianteDetalleScreenState extends State<EstudianteDetalleScreen> {
   Widget _construirTabNovedades() {
     return Column(
       children: [
-        const SizedBox(height: 20),
-        _construirAlertaVacia("No hay novedades registradas."),
+        Expanded(child: _construirAlertaVacia("No hay novedades registradas.")),
       ],
     );
   }
 
-  // Widget reutilizable para los recuadros amarillos de la imagen de referencia
+  // NUEVO: Rediseñado para coincidir exactamente con tu imagen de referencia
   Widget _construirAlertaVacia(String mensaje) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      margin: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.amber[100], // Fondo amarillo pálido
-        borderRadius: BorderRadius.circular(15),
+        color: const Color(0xFFFFF7C0), // Color amarillo idéntico a la foto
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.notifications_off, color: Colors.redAccent),
-          const SizedBox(width: 15),
-          Expanded(child: Text(mensaje, style: const TextStyle(fontSize: 16))),
-        ],
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Icon(Icons.notifications_off, color: Color(0xFFFF5252), size: 28), // Icono rojo
+              const SizedBox(width: 16),
+              Flexible(
+                child: Text(
+                  mensaje, 
+                  style: const TextStyle(
+                    fontSize: 16, 
+                    color: Colors.black87,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

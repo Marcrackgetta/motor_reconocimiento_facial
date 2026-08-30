@@ -19,7 +19,9 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
   
   String _estudianteUUID = ""; 
   String _estudianteNombre = "Estudiante Asignado";
-  String _cursoNombre = "Información del Colegio";
+  
+  // SOLUCIÓN 1: Se agregó 'final' a la variable que no cambia de valor
+  final String _cursoNombre = "Información del Colegio";
   
   String _ultimoEstado = "AUSENTE";
   String _ultimaHora = "--:--";
@@ -97,9 +99,6 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
     return false;
   }
 
-  // ==========================================================
-  // LÓGICA MEJORADA: Validación de Fecha (Regla de Día Actual)
-  // ==========================================================
   void _escucharAsistenciaEnVivo() {
     if (_estudianteUUID.isEmpty) return;
 
@@ -116,11 +115,9 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
           if (registro['timestamp'] != null) {
             final double timestampDouble = (registro['timestamp'] as num).toDouble();
             
-            // Convertimos el Timestamp del motor Python a Hora Local en Dart
             final date = DateTime.fromMillisecondsSinceEpoch((timestampDouble * 1000).toInt());
             final ahora = DateTime.now();
 
-            // Verificamos matemáticamente que el registro corresponda a HOY
             bool esDeHoy = date.year == ahora.year && date.month == ahora.month && date.day == ahora.day;
 
             if (esDeHoy) {
@@ -142,7 +139,6 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
           debugPrint("Error al procesar asistencia: $e");
         }
       } else if (mounted) {
-        // Si el nodo RegistroDiario no existe (porque lo acabamos de borrar), forzamos el estado Ausente
         setState(() {
           _ultimoEstado = "AUSENTE";
           _ultimaHora = "--:--";
@@ -350,7 +346,8 @@ class _RepresentanteDashboardScreenState extends State<RepresentanteDashboardScr
                     
                     setStateDialog(() => isLoadingDialog = false); 
                     
-                    if (exito && mounted) {
+                    // SOLUCIÓN 2: Verificamos directamente el contexto del diálogo
+                    if (exito && dialogContext.mounted) {
                       Navigator.pop(dialogContext); 
                     }
                   },

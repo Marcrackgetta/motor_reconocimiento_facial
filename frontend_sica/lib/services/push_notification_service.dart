@@ -1,50 +1,72 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart'; // Nos permite usar kIsWeb y debugPrint
-import 'api_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
+import '../main.dart'; // Importamos el main para usar la llave global
 
 class PushNotificationService {
-  static final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
-  static final ApiService _apiService = ApiService();
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
 
-  static Future<void> iniciarYRegistrarToken() async {
-    // 1. Solicitar permisos al usuario (El navegador mostrará un aviso: "¿Permitir notificaciones?")
-    NotificationSettings settings = await _firebaseMessaging.requestPermission(
+  Future<void> initialize() async {
+    NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('[FCM] Permiso concedido por el usuario.');
+      debugPrint('Permisos de notificación concedidos.');
       
-      try {
-        // 2. Obtener el Token único que identifica a este navegador/computadora
-        String? token = await _firebaseMessaging.getToken();
-        
-        if (token != null) {
-          debugPrint('[FCM] Token generado correctamente: $token');
-          
-          // 3. Determinar la plataforma para enviarla al backend
-          String plataforma = kIsWeb ? 'WEB' : 'ESCRITORIO_MOVIL';
-          
-          // 4. Enviar el token a PostgreSQL a través de FastAPI
-          await _apiService.registrarTokenFCM(token, plataforma);
-          debugPrint('[FCM] Token guardado en el backend exitosamente.');
-        }
-      } catch (e) {
-        debugPrint('[FCM] Error obteniendo el token FCM: $e');
+      String? token = await _fcm.getToken();
+      if (token != null) {
+        await _saveTokenToDatabase(token);
       }
-    } else {
-      debugPrint('[FCM] El usuario denegó los permisos de notificación.');
-    }
 
-    // 5. Escuchar notificaciones silenciosas cuando la aplicación está abierta (Primer plano)
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('[FCM] ¡Notificación recibida en primer plano!');
-      if (message.notification != null) {
-        debugPrint('Título: ${message.notification!.title}');
-        debugPrint('Cuerpo: ${message.notification!.body}');
-      }
-    });
+      _fcm.onTokenRefresh.listen(_saveTokenToDatabase);
+
+      // Maneja las notificaciones cuando la app ESTÁ ABIERTA
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        final title = message.notification?.title ?? 'Nueva Alerta';
+        final body = message.notification?.body ?? '';
+        
+        debugPrint('Mensaje recibido en primer plano: $title');
+
+        // Dispara una tarjeta emergente visual dentro de la app
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.notifications_active, color: Colors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(body, style: const TextStyle(fontSize: 14)),
+              ],
+            ),
+            backgroundColor: Colors.blueGrey[900],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.all(20),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      });
+    }
+  }
+
+  Future<void> _saveTokenToDatabase(String token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final dbRef = FirebaseDatabase.instance.ref();
+      await dbRef.child('Usuarios/${user.uid}').update({
+        'fcm_token': token,
+      });
+    }
   }
 }
