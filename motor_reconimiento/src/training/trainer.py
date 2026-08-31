@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+
 from src.utils.config import INSIGHTFACE_EMBEDDING_SIZE
 from src.vision.vision_engine import VisionEngine
 

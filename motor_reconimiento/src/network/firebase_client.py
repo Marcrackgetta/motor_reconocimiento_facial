@@ -8,26 +8,24 @@ from typing import Any
 import firebase_admin
 from firebase_admin import credentials, db, messaging
 
+# Configuración del sistema de registro de eventos (consola)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class FirebaseClient:
     """
     Gestiona Firebase RTDB y las notificaciones Push (Entrada, Salida y Faltas).
-    Incluye rutina automática de faltas y corrección a estado "Atrasado".
+    Incluye rutina automática de faltas y actualización de estado de cámaras.
     """
     def __init__(self, database_url: str = "https://motor-c7e0d-default-rtdb.firebaseio.com"):
         self.database_url = database_url
         self.is_connected = False
         
-        # Diccionario para controlar el estado de las notificaciones hoy.
         self.daily_notifications: dict[str, dict[str, dict[str, Any]]] = {}
-        
         self.horas_minimas_para_salida = 4.0 
         
         self.horarios_entrada = {
             "MATUTINO": "07:00",
             "VESPERTINO": "13:00",
-            "NOCTURNO": "18:00"
         }
         
         if not firebase_admin._apps:
@@ -54,17 +52,14 @@ class FirebaseClient:
             self.usuarios_ref = db.reference('Usuarios')
 
     def iniciar_rutina_faltas_automatica(self, hora_check: str = "10:00"):
-        """
-        Inicia un hilo en segundo plano que vigila el reloj y dispara la evaluación de inasistencias.
-        """
         def _rutina():
             logging.info(f"[SISTEMA] Reloj automático de faltas iniciado. Evaluación programada a las {hora_check}.")
             while True:
                 ahora = datetime.now().strftime("%H:%M")
                 if ahora == hora_check:
                     self.procesar_inasistencias()
-                    time.sleep(61)  # Dormir 61 segundos evita que se ejecute múltiples veces en el mismo minuto
-                time.sleep(30)  # Verificar cada 30 segundos
+                    time.sleep(61)
+                time.sleep(30)
         
         hilo = threading.Thread(target=_rutina, daemon=True)
         hilo.start()
@@ -74,17 +69,27 @@ class FirebaseClient:
             return False
             
         try:
-            cam_id = event_data.get("camera_id", "CAM_DEFAULT")
-            uuid = event_data.get("identity_uuid", "unknown")
-            timestamp_evento = event_data.get("timestamp", time.time())
-            bloque_horario = event_data.get("block", "MATUTINO")
+            if isinstance(event_data, str):
+                uuid = event_data
+                cam_id = "CAM_001"
+                timestamp_evento = time.time()
+                bloque_horario = "MATUTINO"
+            else:
+                cam_id = event_data.get("camera_id", "CAM_DEFAULT")
+                uuid = event_data.get("identity_uuid", "unknown")
+                timestamp_evento = event_data.get("timestamp", time.time())
+                bloque_horario = event_data.get("block", "MATUTINO")
             
             cam_ref = self.db_ref.child(cam_id)
+            
+            # --- NUEVO: MECANISMO DE AUTOCORRECCIÓN ---
+            # Reafirmamos que la cámara está activa cada vez que enviamos un evento.
             cam_ref.update({
                 "activo": True,
                 "estado": "activa",
-                "camara_nombre": f"{cam_id} ({modo_operacion})"
+                "status": "online"
             })
+            # ------------------------------------------
             
             es_registrado = uuid not in ["unknown", "Desconocido", "Calculando..."]
             registro = {
@@ -139,13 +144,10 @@ class FirebaseClient:
         tipo_notificacion = None
         estado_entrada = None
 
-        # REGLA PARA ENTRADA
         if modo_operacion == "ENTRADA":
-            # Si no ha entrado antes, procesamos la llegada
             if "entrada" not in historial:
                 historial["entrada"] = timestamp_evento
                 
-                # Si existía una falta previa, la anulamos para corregir el estado a Atrasado
                 if "falta" in historial:
                     historial.pop("falta")
                     logging.info(f"[SISTEMA] Falta anulada para {nombre_estudiante}. Actualizando a llegada con atraso.")
@@ -163,7 +165,6 @@ class FirebaseClient:
                     
                 tipo_notificacion = "ENTRADA"
                 
-        # REGLA PARA SALIDA DEFINITIVA
         elif modo_operacion == "SALIDA":
             if "entrada" in historial and "salida" not in historial and "falta" not in historial:
                 historial["salida"] = timestamp_evento
@@ -243,32 +244,34 @@ class FirebaseClient:
         except Exception as e:
             logging.error(f"[FCM] Error al enviar notificación Push: {e}")
 
-
-
     def set_camera_status(self, camera_id, is_active, ubicacion=None, nombre_camara=None):
         """
         Actualiza el estado de conexión, nombre y ubicación de la cámara en Firebase.
+        Se ajustó a minúsculas ('activa' / 'desactivada') para que el HTML lo detecte correctamente.
         """
-        try:
-            from firebase_admin import db
-            ref = db.reference(f'SesionesCamara/{camera_id}')
+        if not self.is_connected:
+            return
             
-            # Datos básicos de estado
+        try:
+            cam_ref = self.db_ref.child(camera_id)
+            
+            # --- NUEVO: TEXTO EN MINÚSCULAS ---
             datos = {
                 'activo': is_active,
-                'estado': 'Activa' if is_active else 'Desconectada',
+                'estado': 'activa' if is_active else 'desactivada',
                 'status': 'online' if is_active else 'offline'
             }
+            # ----------------------------------
             
-            # Solo actualizamos el nombre y la ubicación cuando la cámara se enciende
             if is_active:
                 if nombre_camara:
                     datos['camara_nombre'] = nombre_camara
                 if ubicacion:
                     datos['ubicacion'] = ubicacion
                     
-            ref.update(datos)
+            cam_ref.update(datos)
             estado_str = "ENCENDIDA" if is_active else "APAGADA"
-            print(f"[FIREBASE] Estado de la cámara {camera_id} actualizado a: {estado_str}")
+            logging.info(f"[FIREBASE] Estado de la cámara {camera_id} actualizado a: {estado_str}")
+            
         except Exception as e:
-            print(f"[ERROR] No se pudo actualizar el estado de la cámara {camera_id}: {e}")
+            logging.error(f"[ERROR] No se pudo actualizar el estado de la cámara {camera_id}: {e}")

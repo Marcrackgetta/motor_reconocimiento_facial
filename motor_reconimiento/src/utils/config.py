@@ -15,7 +15,7 @@ MODEL_PATH = str(BASE_DIR / "data" / "models" / "encodings.pkl")
 CAMERA_SOURCES = [
     {
         "camera_id": "CAM_001",
-        "nombre": "Puerta Principal (Entrada)",
+        "nombre": "Camara 1",
         "src": 0, # 0 para la cámara web principal de la laptop
         "ubicacion": {
             "latitude": -2.128589, 
@@ -24,13 +24,24 @@ CAMERA_SOURCES = [
     },
     {
         "camera_id": "CAM_002",
-        "nombre": "Patio Trasero (Salida)",
+        "nombre": "Camara 2",
         "src": 1, # 1 para una segunda cámara USB, o "http://IP_DE_CAMARA/video" para cámaras web
         "ubicacion": {
-            "latitude": -2.128650, 
-            "longitude": -79.931200
+            "latitude":  -2.128720, 
+            "longitude": -79.931061
         }
-    }
+    },
+    
+    {
+        "camera_id": "CAM_003",
+        "nombre": "Camara 3",
+        "src": 2, # 0 para la cámara web principal de la laptop
+        "ubicacion": {
+            "latitude": -2.129581, 
+            "longitude": -79.931084
+        }
+    },
+    
 ]
 
 RECONNECT_DELAY_SECONDS = 2

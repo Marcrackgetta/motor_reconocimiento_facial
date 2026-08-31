@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass, field
 
 import numpy as np
+
 from src.vision.face_data import DetectedFace
 
 
