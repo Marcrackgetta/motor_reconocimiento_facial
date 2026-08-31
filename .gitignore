@@ -1,36 +1,35 @@
 # ==========================================
-# Ejecutables y Archivos Compilados
+# Ejecutables y Archivos Compilados (Búsqueda Global)
 # ==========================================
-*.exe
-*.apk
-*.aab
+**/*.exe
+**/*.apk
+**/*.aab
 
 # ==========================================
 # Archivos de Entorno y Seguridad (¡Muy importante!)
 # ==========================================
-serviceAccountKey.json
-.env
+**/serviceAccountKey.json
+**/.env
+**/*.env
 
 # ==========================================
-# Motor de Reconocimiento (Python)
+# Motor de Reconocimiento y App Flutter
 # ==========================================
-.venv/
-__pycache__/
-build/
-dist/
-*.pyc
-*.spec
+**/.venv/
+**/__pycache__/
+**/build/
+**/dist/
+**/*.pyc
+**/*.spec
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
 
 # ==========================================
-# Interfaz de Usuario (Flutter)
+# Documentación y Basura Antigua
 # ==========================================
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-frontend_sica/build/
-
 Documento de Diseño del Sistema SICA.md
 FASE_0_MAPA_DE_RECONSTRUCCION.md
 RUMBO_TECNICO_DEFINITIVO.md
