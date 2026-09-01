@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 class FirebaseClient:
     """
     Gestiona Firebase RTDB y las notificaciones Push (Entrada, Salida y Faltas).
-    Incluye rutina automática de faltas y actualización de estado de cámaras.
+    Incluye rutina automática de faltas, actualización de estado de cámaras y 
+    gestión de asistencia global por estudiante.
     """
     def __init__(self, database_url: str = "https://motor-c7e0d-default-rtdb.firebaseio.com"):
         self.database_url = database_url
@@ -64,66 +65,118 @@ class FirebaseClient:
         hilo = threading.Thread(target=_rutina, daemon=True)
         hilo.start()
 
+    def registrar_estudiante_en_curso(self, cedula: str, nombre: str, cam_id: str):
+        """
+        Asocia un nuevo estudiante al curso representado por la cámara y lo añade a la nómina oficial.
+        """
+        if not self.is_connected: 
+            return
+            
+        try:
+            # Importamos la configuración localmente para evitar dependencias circulares
+            from src.utils.config import CAMERA_SOURCES
+            
+            # Identificamos el curso al que pertenece esta cámara
+            curso = next((c.get("curso", "SIN_CURSO") for c in CAMERA_SOURCES if c.get("camera_id") == cam_id), "SIN_CURSO")
+            
+            # 1. Guardamos al estudiante en la nómina del curso (vinculado a la cámara)
+            self.db_ref.child(cam_id).child("NominaCurso").child(cedula).set({
+                "cedula": cedula,
+                "nombre": nombre,
+                "curso": curso,
+                "fecha_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            # 2. Guardamos la información en el nodo global de Estudiantes (Para futura vinculación con representantes)
+            self.estudiantes_ref.child(cedula).update({
+                "nombre": nombre,
+                "curso": curso
+            })
+            logging.info(f"[SISTEMA] Estudiante {nombre} ({cedula}) añadido a la nómina de {curso}.")
+            
+        except Exception as e:
+            logging.error(f"[FIREBASE] Error al registrar estudiante en el curso: {e}")
+
     def send_event(self, event_data: dict[str, Any], modo_operacion: str = "ENTRADA") -> bool:
         if not self.is_connected:
             return False
             
         try:
             if isinstance(event_data, str):
-                uuid = event_data
+                uuid_raw = event_data
                 cam_id = "CAM_001"
                 timestamp_evento = time.time()
                 bloque_horario = "MATUTINO"
             else:
                 cam_id = event_data.get("camera_id", "CAM_DEFAULT")
-                uuid = event_data.get("identity_uuid", "unknown")
+                uuid_raw = event_data.get("identity_uuid", "unknown")
                 timestamp_evento = event_data.get("timestamp", time.time())
                 bloque_horario = event_data.get("block", "MATUTINO")
             
+            # --- NUEVA LÓGICA DE IDENTIFICACIÓN: Separar Cédula y Nombre ---
+            if isinstance(uuid_raw, str) and "--" in uuid_raw:
+                cedula, nombre_estudiante = uuid_raw.split("--", 1)
+            else:
+                # Fallback por si detecta "unknown" o formatos antiguos
+                cedula = uuid_raw if isinstance(uuid_raw, str) else "unknown"
+                nombre_estudiante = cedula
+                
+            es_registrado = cedula not in ["unknown", "Desconocido", "Calculando..."]
+
             cam_ref = self.db_ref.child(cam_id)
             
-            # --- NUEVO: MECANISMO DE AUTOCORRECCIÓN ---
-            # Reafirmamos que la cámara está activa cada vez que enviamos un evento.
+            # Reafirmamos que la cámara está activa
             cam_ref.update({
                 "activo": True,
                 "estado": "activa",
                 "status": "online"
             })
-            # ------------------------------------------
             
-            es_registrado = uuid not in ["unknown", "Desconocido", "Calculando..."]
-            registro = {
-                "timestamp": timestamp_evento,
-                "bloque_horario": bloque_horario,
-                "tipo_evento": modo_operacion
-            }
+            hoy = datetime.fromtimestamp(timestamp_evento).strftime("%Y-%m-%d")
+            hora_real = datetime.fromtimestamp(timestamp_evento).strftime("%H:%M:%S")
             
-            nombre_estudiante = uuid
-
+            # Referencia al documento de asistencia ÚNICO del día
+            registro_diario_ref = cam_ref.child("RegistroDiario").child(hoy)
+            
             if es_registrado:
-                estudiante_data = self.estudiantes_ref.child(uuid).get()
+                estudiante_data = self.estudiantes_ref.child(cedula).get()
                 if estudiante_data:
-                    nombre_estudiante = estudiante_data.get('nombre', uuid)
+                    # Preferimos el nombre almacenado en base de datos si existe
+                    nombre_estudiante = estudiante_data.get('nombre', nombre_estudiante)
                     rep_uid = estudiante_data.get('representante_uid')
                     
                     if rep_uid:
-                        self._evaluar_reglas_y_notificar(rep_uid, nombre_estudiante, cam_id, uuid, bloque_horario, timestamp_evento, modo_operacion)
+                        self._evaluar_reglas_y_notificar(rep_uid, nombre_estudiante, cam_id, cedula, bloque_horario, timestamp_evento, modo_operacion)
 
-                registro["total_presentes"] = 1
-                registro["total_desconocidos"] = 0
-                registro["lista_presentes"] = {
-                    uuid: {"id": uuid, "nombre": nombre_estudiante, "registrado": True}
-                }
+                # --- NUEVA LÓGICA DE ROSTER: Agregar a la lista de presentes del día ---
+                # Si estaba en la lista de ausentes (implementación futura), lo quitamos
+                registro_diario_ref.child("lista_ausentes").child(cedula).delete()
+                
+                # Lo agregamos a los presentes. Al usar .set() con su cédula, no sobrescribe a los demás.
+                registro_diario_ref.child("lista_presentes").child(cedula).set({
+                    "id": cedula,
+                    "nombre": nombre_estudiante,
+                    "registrado": True,
+                    "hora_deteccion": hora_real
+                })
             else:
                 nombre_estudiante = "Rostro No Reconocido"
-                registro["total_presentes"] = 0
-                registro["total_desconocidos"] = 1
-                registro["lista_intrusos"] = {
-                    "intr_temp": {"id": "desconocido", "nombre": nombre_estudiante, "registrado": False}
-                }
+                # Usamos el timestamp como ID único para que no se sobrescriban los diferentes intrusos
+                intruder_key = str(int(timestamp_evento))
+                registro_diario_ref.child("lista_intrusos").child(intruder_key).set({
+                    "id": "desconocido",
+                    "nombre": nombre_estudiante,
+                    "registrado": False,
+                    "hora_intento": hora_real
+                })
             
-            cam_ref.child("RegistroDiario").push(registro)
-            logging.info(f"[FIREBASE] Evento de {modo_operacion} para {nombre_estudiante} guardado.")
+            # Actualizamos meta-datos del día
+            registro_diario_ref.update({
+                "fecha": hoy,
+                "ultimo_evento": timestamp_evento
+            })
+
+            logging.info(f"[FIREBASE] Evento de {modo_operacion} para {nombre_estudiante} ({cedula}) guardado en la asistencia diaria.")
             return True
             
         except Exception as e:
@@ -255,13 +308,11 @@ class FirebaseClient:
         try:
             cam_ref = self.db_ref.child(camera_id)
             
-            # --- NUEVO: TEXTO EN MINÚSCULAS ---
             datos = {
                 'activo': is_active,
                 'estado': 'activa' if is_active else 'desactivada',
                 'status': 'online' if is_active else 'offline'
             }
-            # ----------------------------------
             
             if is_active:
                 if nombre_camara:

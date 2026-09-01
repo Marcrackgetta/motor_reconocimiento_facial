@@ -33,11 +33,51 @@ from src.vision.recognition_engine import RecognitionEngine
 from src.vision.tracker import FaceTracker
 from src.vision.vision_engine import VisionEngine
 
+# =========================================================================
+# NUEVO: CLASE PARA EL FORMULARIO DE REGISTRO
+# =========================================================================
+class DialogoRegistro(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Registro de Estudiante")
+        self.geometry("350x250")
+        self.resultado = None
+        
+        # Hacemos que la ventana sea modal (bloquea la ventana principal)
+        self.transient(parent)
+        self.grab_set()
+        
+        tk.Label(self, text="Cédula (10 dígitos numéricos):", font=("Helvetica", 10, "bold")).pack(pady=(15, 5))
+        self.cedula_entry = tk.Entry(self, width=30, font=("Helvetica", 11))
+        self.cedula_entry.pack()
+        
+        tk.Label(self, text="Apellidos y Nombres:", font=("Helvetica", 10, "bold")).pack(pady=(15, 5))
+        self.nombre_entry = tk.Entry(self, width=30, font=("Helvetica", 11))
+        self.nombre_entry.pack()
+        
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="Cancelar", bg="#E74C3C", fg="white", command=self.destroy).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="Guardar Registro", bg="#3498DB", fg="white", font=("Helvetica", 10, "bold"), command=self.guardar).pack(side="left", padx=10)
 
+    def guardar(self):
+        cedula = self.cedula_entry.get().strip()
+        nombre = self.nombre_entry.get().strip().upper()
+        
+        if len(cedula) == 10 and cedula.isdigit() and nombre:
+            self.resultado = (cedula, nombre)
+            self.destroy()
+        else:
+            messagebox.showwarning("Error de Validación", "La cédula debe tener exactamente 10 dígitos y el nombre no puede estar vacío.", parent=self)
+
+# =========================================================================
+# CLASE PRINCIPAL DEL MOTOR GRÁFICO
+# =========================================================================
 class FaceRecognitionGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Motor de Reconocimiento Facial Edge")
+        self.root.title("Motor de Reconocimiento Facial Edge SICA")
         self.root.geometry("1100x650")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -51,10 +91,8 @@ class FaceRecognitionGUI:
         self.active_camera_idx = 0
         self.view_mode = "SINGLE"
         self.streams = []
-        
         self.current_operation_mode = "ENTRADA"
 
-        # Optimización de rendimiento: Salto de Fotogramas (Frame Skipping)
         self.frame_counter = 0
         self.process_every_n_frames = 3
         self.last_faces = [] 
@@ -63,7 +101,6 @@ class FaceRecognitionGUI:
         self.zoom_factor = tk.DoubleVar(value=1.0)
         self.pan_x = tk.DoubleVar(value=0.0)
         self.pan_y = tk.DoubleVar(value=0.0)
-        
         self.drag_start_x = 0
         self.drag_start_y = 0
 
@@ -88,7 +125,7 @@ class FaceRecognitionGUI:
         self.control_frame = tk.Frame(self.root, bg="#2C3E50", padx=20, pady=20)
         self.control_frame.grid(row=0, column=1, sticky="nsew")
 
-        lbl_title = tk.Label(self.control_frame, text="Panel de Control Edge", font=("Helvetica", 16, "bold"), bg="#2C3E50", fg="white")
+        lbl_title = tk.Label(self.control_frame, text="Panel de Control SICA", font=("Helvetica", 16, "bold"), bg="#2C3E50", fg="white")
         lbl_title.pack(pady=(0, 20))
 
         self.lbl_status = tk.Label(self.control_frame, text="Estado: Reconocimiento Activo", font=("Helvetica", 11), bg="#2C3E50", fg="#2ECC71")
@@ -97,10 +134,11 @@ class FaceRecognitionGUI:
         lbl_instrucciones = tk.Label(self.control_frame, text="🖱️ Rueda: Zoom | Click Izq: Mover", font=("Helvetica", 10, "italic"), bg="#2C3E50", fg="#BDC3C7")
         lbl_instrucciones.pack(pady=(0, 20))
 
-        lbl_cams = tk.Label(self.control_frame, text="Selector de Cámara", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#BDC3C7")
+        lbl_cams = tk.Label(self.control_frame, text="Selector de Cámara / Curso", font=("Helvetica", 10, "bold"), bg="#2C3E50", fg="#BDC3C7")
         lbl_cams.pack(pady=(10, 5))
 
-        cam_options = [f"{cam.get('nombre', f'Cam {i}')} ({cam.get('camera_id', 'UNKNOWN')})" for i, cam in enumerate(CAMERA_SOURCES)]
+        # NUEVO: Mostramos el nombre de la cámara y su curso asignado
+        cam_options = [f"{cam.get('nombre', f'Cam {i}')} [{cam.get('curso', 'Sin Curso')}]" for i, cam in enumerate(CAMERA_SOURCES)]
         self.cam_var = tk.StringVar()
         self.cam_combo = ttk.Combobox(self.control_frame, textvariable=self.cam_var, values=cam_options, state="readonly", font=("Helvetica", 10))
         self.cam_combo.pack(fill="x", pady=5)
@@ -120,10 +158,10 @@ class FaceRecognitionGUI:
         btn_grid.pack(fill="x", pady=(15, 15))
 
         button_font = ("Helvetica", 12)
-        self.btn_register = tk.Button(self.control_frame, text="Registrar Nuevo Usuario", font=button_font, bg="#3498DB", fg="white", command=self.start_registration)
+        self.btn_register = tk.Button(self.control_frame, text="Registrar Nuevo Alumno", font=button_font, bg="#3498DB", fg="white", command=self.start_registration)
         self.btn_register.pack(fill="x", pady=10, ipady=5)
 
-        self.btn_train = tk.Button(self.control_frame, text="Actualizar Modelo", font=button_font, bg="#F39C12", fg="white", command=self.start_training)
+        self.btn_train = tk.Button(self.control_frame, text="Actualizar Modelo AI", font=button_font, bg="#F39C12", fg="white", command=self.start_training)
         self.btn_train.pack(fill="x", pady=10, ipady=5)
 
         self.btn_quit = tk.Button(self.control_frame, text="Cerrar Programa", font=button_font, bg="#E74C3C", fg="white", command=self.on_closing)
@@ -152,7 +190,6 @@ class FaceRecognitionGUI:
 
         self.pan_x.set(max(-1.0, min(1.0, new_pan_x)))
         self.pan_y.set(max(-1.0, min(1.0, new_pan_y)))
-
         self.drag_start_x = event.x
         self.drag_start_y = event.y
 
@@ -176,7 +213,6 @@ class FaceRecognitionGUI:
         
         self.event_manager = EventManager()
         self.api_client = FirebaseClient() 
-
         self.api_client.iniciar_rutina_faltas_automatica(hora_check="10:00")
 
         self.sender_thread = threading.Thread(target=self._event_sender_task, daemon=True)
@@ -194,14 +230,11 @@ class FaceRecognitionGUI:
                 reconnect_delay=RECONNECT_DELAY_SECONDS,
             )
             self.streams.append(stream)
-            
-            # Reportar a Firebase que la cámara se encendió exitosamente, incluyendo coordenadas
             self.api_client.set_camera_status(cam_id, True, ubicacion=cam_ubicacion, nombre_camara=cam_nombre)
 
     def _event_sender_task(self):
         while self.running:
             pending_events = self.event_manager.get_pending_events()
-            
             if pending_events:
                 evento_actual = pending_events[0]
                 success = self.api_client.send_event(evento_actual, modo_operacion=self.current_operation_mode)
@@ -231,17 +264,14 @@ class FaceRecognitionGUI:
     def create_connection_lost_frame(self):
         w = self.video_label.winfo_width()
         h = self.video_label.winfo_height()
-        if w < 10 or h < 10:
-            w, h = 640, 480
+        if w < 10 or h < 10: w, h = 640, 480
         display_frame = np.zeros((h, w, 3), dtype=np.uint8)
         cv2.putText(display_frame, "CONEXION PERDIDA", (w // 2 - 130, h // 2 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         cv2.putText(display_frame, "Intentando reconectar automaticamente...", (w // 2 - 210, h // 2 + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         return display_frame
 
     def update_frame(self):
-        if not self.running:
-            return
-
+        if not self.running: return
         display_frame = None
 
         if self.view_mode == "SINGLE":
@@ -253,19 +283,10 @@ class FaceRecognitionGUI:
                 if z > 1.0:
                     h, w = frame.shape[:2]
                     new_h, new_w = int(h / z), int(w / z)
-
-                    max_shift_x = w - new_w
-                    max_shift_y = h - new_h
-
-                    pan_val_x = self.pan_x.get()
-                    pan_val_y = self.pan_y.get()
-
-                    x1 = int(max_shift_x * ((pan_val_x + 1.0) / 2.0))
-                    y1 = int(max_shift_y * ((pan_val_y + 1.0) / 2.0))
-
-                    x1 = max(0, min(x1, max_shift_x))
-                    y1 = max(0, min(y1, max_shift_y))
-
+                    max_shift_x, max_shift_y = w - new_w, h - new_h
+                    x1 = int(max_shift_x * ((self.pan_x.get() + 1.0) / 2.0))
+                    y1 = int(max_shift_y * ((self.pan_y.get() + 1.0) / 2.0))
+                    x1, y1 = max(0, min(x1, max_shift_x)), max(0, min(y1, max_shift_y))
                     cropped = frame[y1 : y1 + new_h, x1 : x1 + new_w]
                     frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
@@ -277,57 +298,37 @@ class FaceRecognitionGUI:
                     display_frame = self.process_registration(frame, display_frame)
                 elif self.mode == "TRAINING":
                     cv2.putText(display_frame, "Entrenando modelo... Por favor espere", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
-                
             else:
                 display_frame = self.create_connection_lost_frame()
 
         elif self.view_mode == "GRID":
             frames = []
             target_w, target_h = 320, 240
-
             for i, stream in enumerate(self.streams):
                 f = stream.get_frame()
-
                 if f is not None and getattr(stream, "is_connected", True):
                     proc_frame = f.copy()
-                    if self.mode == "RECOGNIZE":
-                        proc_frame = self.process_recognition(f, proc_frame, stream_idx=i)
-                    elif self.mode == "REGISTER":
-                        proc_frame = self.process_registration(f, proc_frame)
-                    elif self.mode == "TRAINING":
-                        cv2.putText(proc_frame, "Entrenando...", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+                    if self.mode == "RECOGNIZE": proc_frame = self.process_recognition(f, proc_frame, stream_idx=i)
+                    elif self.mode == "REGISTER": proc_frame = self.process_registration(f, proc_frame)
+                    elif self.mode == "TRAINING": cv2.putText(proc_frame, "Entrenando...", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
                     frames.append(cv2.resize(proc_frame, (target_w, target_h)))
                 else:
                     blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
                     cv2.putText(blank, "SIN CONEXION", (80, target_h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                     frames.append(blank)
 
-            if len(frames) == 1:
-                display_frame = frames[0]
-            elif len(frames) == 2:
-                display_frame = np.hstack((frames[0], frames[1]))
-            elif len(frames) == 3:
-                blank = np.zeros((target_h, target_w, 3), dtype=np.uint8)
-                top = np.hstack((frames[0], frames[1]))
-                bottom = np.hstack((frames[2], blank))
-                display_frame = np.vstack((top, bottom))
-            elif len(frames) >= 4:
-                top = np.hstack((frames[0], frames[1]))
-                bottom = np.hstack((frames[2], frames[3]))
-                display_frame = np.vstack((top, bottom))
-
-            cv2.putText(display_frame, "VISTA GENERAL", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            if len(frames) == 1: display_frame = frames[0]
+            elif len(frames) == 2: display_frame = np.hstack((frames[0], frames[1]))
+            elif len(frames) == 3: display_frame = np.vstack((np.hstack((frames[0], frames[1])), np.hstack((frames[2], np.zeros((target_h, target_w, 3), dtype=np.uint8)))))
+            elif len(frames) >= 4: display_frame = np.vstack((np.hstack((frames[0], frames[1])), np.hstack((frames[2], frames[3]))))
 
         if display_frame is not None:
             rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-
-            label_w = self.video_label.winfo_width()
-            label_h = self.video_label.winfo_height()
+            label_w, label_h = self.video_label.winfo_width(), self.video_label.winfo_height()
 
             if label_w > 10 and label_h > 10:
                 frame_h, frame_w = rgb_frame.shape[:2]
-                target_aspect = label_w / label_h
-                frame_aspect = frame_w / frame_h
+                target_aspect, frame_aspect = label_w / label_h, frame_w / frame_h
 
                 if frame_aspect > target_aspect:
                     new_w = int(frame_h * target_aspect)
@@ -340,16 +341,13 @@ class FaceRecognitionGUI:
 
                 rgb_frame = cv2.resize(rgb_frame, (label_w, label_h), interpolation=cv2.INTER_LINEAR)
 
-            img = Image.fromarray(rgb_frame)
-            self.current_imgtk = ImageTk.PhotoImage(image=img)
+            self.current_imgtk = ImageTk.PhotoImage(image=Image.fromarray(rgb_frame))
             self.video_label.configure(image=self.current_imgtk)
 
         self.root.after(16, self.update_frame)
 
     def process_recognition(self, frame, display_frame, stream_idx=None):
-        if stream_idx is None:
-            stream_idx = self.active_camera_idx
-            
+        if stream_idx is None: stream_idx = self.active_camera_idx
         stream = self.streams[stream_idx]
         camera_id = stream.camera_id
 
@@ -359,26 +357,35 @@ class FaceRecognitionGUI:
             context = self.vision_engine.detect(frame)
             context = self.tracker.update(context)
             context = self.recognition_engine.process(frame, context, self.vision_engine, camera_id)
-            
             self.last_faces = context.faces 
 
         for face in self.last_faces:
             confidence = getattr(face, "confidence", 0.0)
-            identity = getattr(face, "identity_uuid", "Calculando...")
+            identity_raw = getattr(face, "identity_uuid", "Calculando...")
 
-            if identity == "unknown" or identity == "Desconocido":
+            # --- NUEVA LÓGICA DE DIBUJADO EN PANTALLA ---
+            # Desempaquetamos la clave para mostrar solo el nombre
+            if "--" in identity_raw:
+                cedula, nombre_display = identity_raw.split("--", 1)
+            else:
+                cedula = identity_raw
+                nombre_display = identity_raw
+
+            if cedula in ["unknown", "Desconocido"]:
                 color = (0, 0, 255)
-            elif identity == "Calculando...":
+            elif cedula == "Calculando...":
                 color = (255, 255, 0)
             else:
                 color = (0, 255, 0)
                 if self.frame_counter % self.process_every_n_frames == 0:
-                    self.event_manager.register_recognition(identity, camera_id)
+                    # Se envía a Firebase el RAW completo (CEDULA--NOMBRE)
+                    self.event_manager.register_recognition(identity_raw, camera_id)
 
             cv2.rectangle(display_frame, (int(face.left), int(face.top)), (int(face.right), int(face.bottom)), color, 2)
 
-            display_id = identity[:15] if len(identity) > 15 else identity
-            label = f"{display_id} ({confidence:.1f}%)" if confidence > 0 else f"{display_id}"
+            # Pintamos solo el Nombre en el recuadro
+            display_text = nombre_display[:20] if len(nombre_display) > 20 else nombre_display
+            label = f"{display_text} ({confidence:.1f}%)" if confidence > 0 else f"{display_text}"
             cv2.putText(display_frame, label, (int(face.left), int(face.top) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
         return display_frame
@@ -394,20 +401,14 @@ class FaceRecognitionGUI:
         if len(faces) == 1:
             face = faces[0]
             box = face.bbox.astype(int)
-            x1, y1, x2, y2 = box
-
-            h, w = frame.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
-
+            x1, y1, x2, y2 = max(0, box[0]), max(0, box[1]), min(frame.shape[1], box[2]), min(frame.shape[0], box[3])
             face_crop = frame[y1:y2, x1:x2]
 
             if face_crop.size > 0:
                 color = (200, 200, 200) 
                 
                 if self.frame_counter % self.process_every_n_frames == 0:
-                    gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-                    blur_variance = cv2.Laplacian(gray_crop, cv2.CV_64F).var()
+                    blur_variance = cv2.Laplacian(cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
                     color = (0, 0, 255)
 
                     if blur_variance >= BLUR_THRESHOLD and (time.time() - self.cooldown_time > 0.4):
@@ -416,17 +417,16 @@ class FaceRecognitionGUI:
                         self.captured_photos += 1
                         self.cooldown_time = time.time()
                         color = (0, 255, 0)
-
-                        if platform.system() == "Windows":
-                            winsound.Beep(1000, 150)
+                        if platform.system() == "Windows": winsound.Beep(1000, 150)
 
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(display_frame, f"Capturas: {self.captured_photos}/{MAX_PHOTOS_PER_PERSON}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
             if self.captured_photos >= MAX_PHOTOS_PER_PERSON:
-                if platform.system() == "Windows":
-                    winsound.Beep(1500, 400)
-                messagebox.showinfo("Éxito", f"Se registró el rostro a la Cédula: {self.identity_label}.")
+                if platform.system() == "Windows": winsound.Beep(1500, 400)
+                
+                nombre_msg = self.identity_label.split("--")[1] if "--" in self.identity_label else self.identity_label
+                messagebox.showinfo("Éxito", f"Se registró correctamente el rostro de:\n{nombre_msg}.")
                 self.mode = "RECOGNIZE"
                 self.update_ui_state("Estado: Reconocimiento Activo", "#2ECC71")
 
@@ -436,37 +436,36 @@ class FaceRecognitionGUI:
         return display_frame
 
     def start_registration(self):
-        if self.mode == "TRAINING":
-            return
+        if self.mode == "TRAINING": return
 
-        codigo_institucional = simpledialog.askstring("Registro de Rostro", "Ingrese el número de Cédula (exactamente 10 dígitos numéricos):", parent=self.root)
-
-        if not codigo_institucional or not codigo_institucional.strip():
+        # 1. Llamamos a nuestra nueva ventana avanzada
+        dialogo = DialogoRegistro(self.root)
+        self.root.wait_window(dialogo)
+        
+        # 2. Verificamos si se canceló
+        if not dialogo.resultado:
             return
             
-        codigo_limpio = codigo_institucional.strip()
-        
-        if not (len(codigo_limpio) == 10 and codigo_limpio.isdigit()):
-            messagebox.showwarning("Error de Validación", "La cédula debe contener exactamente 10 dígitos numéricos.\nNo se aceptan letras, espacios ni otros caracteres.", parent=self.root)
-            return
+        cedula_limpia, nombre_completo = dialogo.resultado
 
-        self.identity_label = codigo_limpio
+        # 3. Estructura segura: CEDULA--NOMBRE
+        self.identity_label = f"{cedula_limpia}--{nombre_completo}"
         self.person_dir = os.path.join(DATASET_DIR, self.identity_label)
         os.makedirs(self.person_dir, exist_ok=True)
+
+        # 4. Enviamos a Firebase para crear la nómina del curso
+        stream_actual = self.streams[self.active_camera_idx]
+        self.api_client.registrar_estudiante_en_curso(cedula_limpia, nombre_completo, stream_actual.camera_id)
 
         self.captured_photos = 0
         self.cooldown_time = time.time()
         self.mode = "REGISTER"
         
-        self.update_ui_state(f"Estado: Registrando a {self.identity_label}...", "#3498DB")
+        self.update_ui_state(f"Estado: Registrando a {nombre_completo}...", "#3498DB")
 
     def start_training(self):
-        if self.mode == "TRAINING":
-            return
-
-        confirm = messagebox.askyesno("Confirmar", "¿Desea iniciar el entrenamiento con los nuevos usuarios registrados?")
-
-        if confirm:
+        if self.mode == "TRAINING": return
+        if messagebox.askyesno("Confirmar", "¿Desea iniciar el entrenamiento con los nuevos usuarios registrados?"):
             self.mode = "TRAINING"
             self.update_ui_state("Estado: Entrenando Modelo...", "#F39C12")
             threading.Thread(target=self._train_task, daemon=True).start()
@@ -485,13 +484,11 @@ class FaceRecognitionGUI:
                 FileManager.save_model(model_data, MODEL_PATH)
                 self.recognition_engine.known_encodings = model_data["encodings"]
                 self.recognition_engine.known_names = model_data["names"]
-
                 self.root.after(0, lambda: messagebox.showinfo("Éxito", "Modelo actualizado correctamente en el motor."))
             else:
                 self.root.after(0, lambda: messagebox.showerror("Error", "No se generaron embeddings."))
         except Exception as e:
-            error_msg = str(e)
-            self.root.after(0, lambda msg=error_msg: messagebox.showerror("Error de Entrenamiento", msg))
+            self.root.after(0, lambda msg=str(e): messagebox.showerror("Error de Entrenamiento", msg))
         finally:
             self.root.after(0, self._restore_recognition_mode)
 
@@ -505,24 +502,17 @@ class FaceRecognitionGUI:
     def on_closing(self):
         if messagebox.askokcancel("Salir", "¿Es seguro que deseas cerrar el programa?"):
             self.running = False
-            
-            # Reportar a Firebase que las cámaras se están apagando antes de cerrar
             for stream in self.streams:
                 self.api_client.set_camera_status(stream.camera_id, False)
                 stream.release()
-                
             self.root.destroy()
             sys.exit(0)
 
 if __name__ == "__main__":
     os.makedirs("src/events", exist_ok=True)
     os.makedirs("src/network", exist_ok=True)
-    
-    if not os.path.exists("src/events/__init__.py"):
-        open("src/events/__init__.py", 'a').close()
-    if not os.path.exists("src/network/__init__.py"):
-        open("src/network/__init__.py", 'a').close()
-        
+    if not os.path.exists("src/events/__init__.py"): open("src/events/__init__.py", 'a').close()
+    if not os.path.exists("src/network/__init__.py"): open("src/network/__init__.py", 'a').close()
     root = tk.Tk()
     app = FaceRecognitionGUI(root)
     root.mainloop()

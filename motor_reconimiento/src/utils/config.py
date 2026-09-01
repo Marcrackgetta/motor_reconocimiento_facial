@@ -16,32 +16,24 @@ CAMERA_SOURCES = [
     {
         "camera_id": "CAM_001",
         "nombre": "Camara 1",
-        "src": 0, # 0 para la cámara web principal de la laptop
-        "ubicacion": {
-            "latitude": -2.128589, 
-            "longitude": -79.931099
-        }
+        "curso": "2_INFO_B", # NUEVO: Vinculación directa al curso
+        "src": 0, 
+        "ubicacion": {"latitude": -2.128589, "longitude": -79.931099}
     },
     {
         "camera_id": "CAM_002",
         "nombre": "Camara 2",
-        "src": 1, # 1 para una segunda cámara USB, o "http://IP_DE_CAMARA/video" para cámaras web
-        "ubicacion": {
-            "latitude":  -2.128720, 
-            "longitude": -79.931061
-        }
+        "curso": "2_INFO_A",
+        "src": 1, 
+        "ubicacion": {"latitude": -2.128720, "longitude": -79.931061}
     },
-    
     {
         "camera_id": "CAM_003",
         "nombre": "Camara 3",
-        "src": 2, # 0 para la cámara web principal de la laptop
-        "ubicacion": {
-            "latitude": -2.129581, 
-            "longitude": -79.931084
-        }
-    },
-    
+        "curso": "1_INFO_C",
+        "src": 2, 
+        "ubicacion": {"latitude": -2.129581, "longitude": -79.931084}
+    }
 ]
 
 RECONNECT_DELAY_SECONDS = 2

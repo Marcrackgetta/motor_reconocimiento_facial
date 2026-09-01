@@ -1,121 +1,109 @@
-import logging
-import time
-from pathlib import Path
-from typing import Any
-
+import os
 import cv2
+import numpy as np
+import hashlib
+import logging
+from pathlib import Path
+from insightface.app import FaceAnalysis
 
-from src.utils.config import INSIGHTFACE_EMBEDDING_SIZE
-from src.vision.vision_engine import VisionEngine
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
-
-logger = logging.getLogger(__name__)
-
+from src.storage.file_manager import FileManager
+from src.utils.config import MODEL_PATH, INSIGHTFACE_MODEL_PACK
 
 class ModelTrainer:
-    """
-    Entrenador de modelo adaptado al motor de visión asíncrono/diferido.
-    """
+    def __init__(self, *args, **kwargs):
+        # Inicializamos el motor de InsightFace para la extracción
+        self.app = FaceAnalysis(name=INSIGHTFACE_MODEL_PACK)
+        self.app.prepare(ctx_id=0, det_size=(320, 320))
 
-    # CORRECCIÓN: Ahora el constructor acepta 'detection_model'
-    def __init__(self, detection_model: str = "hog"):
-        self.engine = VisionEngine()
-        self.expected_dim = INSIGHTFACE_EMBEDDING_SIZE
-        self.known_encodings: list[Any] = []
-        self.known_names: list[str] = []
+    def _calcular_hash(self, filepath):
+        """Genera una firma criptográfica única (SHA-256) basada en los bytes de la imagen."""
+        hasher = hashlib.sha256()
+        try:
+            with open(filepath, 'rb') as f:
+                # Leemos en fragmentos por si la imagen es muy pesada
+                while chunk := f.read(8192):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except Exception as e:
+            logging.error(f"[TRAINER] Error al calcular hash de {filepath}: {e}")
+            return None
 
-    def train_from_directory(self, person_directories: list[Any]) -> dict[str, Any]:
+    def train_from_directory(self, directories):
+        """
+        Procesa el dataset de forma incremental:
+        Solo extrae embeddings de fotos nuevas o modificadas.
+        """
+        logging.info("[TRAINER] Iniciando generación de embeddings incremental...")
+        
+        # 1. Cargar la memoria (caché) del procesamiento anterior
+        modelo_antiguo = FileManager.load_model(Path(MODEL_PATH))
+        cache_antigua = modelo_antiguo.get("cache_imagenes", {})
+        
+        nueva_cache = {}
+        known_encodings = []
+        known_names = []
+        
+        fotos_reutilizadas = 0
+        fotos_procesadas = 0
 
-        if not person_directories:
-            logger.warning("No se encontraron directorios de entrenamiento.")
-            return {"encodings": [], "names": []}
+        # 2. Recorrer cada estudiante (carpeta)
+        for person_dir in directories:
+            person_name = os.path.basename(person_dir)
+            student_encodings = []
 
-        start_time = time.time()
-        total_ok = 0
-        total_fail = 0
+            # Recorrer cada fotografía del estudiante
+            for image_name in os.listdir(person_dir):
+                if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    continue
+                    
+                image_path = os.path.join(person_dir, image_name)
+                
+                # Creamos una llave única para esta foto en la caché
+                cache_key = f"{person_name}/{image_name}"
+                
+                # A. Calculamos la firma (Hash) de la foto actual
+                file_hash = self._calcular_hash(image_path)
+                if not file_hash:
+                    continue
+                
+                # B. LÓGICA INCREMENTAL: ¿La foto ya fue procesada y no ha cambiado?
+                if cache_key in cache_antigua and cache_antigua[cache_key].get("hash") == file_hash:
+                    # REUTILIZAR: Saltamos el procesamiento pesado y usamos la memoria
+                    student_encodings.append(cache_antigua[cache_key]["embedding"])
+                    nueva_cache[cache_key] = cache_antigua[cache_key]
+                    fotos_reutilizadas += 1
+                    continue
+                
+                # C. PROCESAR: Si es nueva o se modificó, usamos InsightFace
+                img = cv2.imread(image_path)
+                if img is None:
+                    continue
+                    
+                faces = self.app.get(img)
+                if len(faces) >= 1:
+                    # Tomamos el rostro principal (el más grande/centrado)
+                    embedding = faces[0].embedding
+                    student_encodings.append(embedding)
+                    
+                    # Guardamos en la nueva caché para el futuro
+                    nueva_cache[cache_key] = {
+                        "hash": file_hash,
+                        "embedding": embedding
+                    }
+                    fotos_procesadas += 1
 
-        for idx, person_dir in enumerate(person_directories, 1):
-            person_dir = Path(person_dir)
-            person_name = person_dir.name.replace("_", " ")
+            # 3. Promediar los embeddings del estudiante y guardarlo en la lista final
+            if student_encodings:
+                avg_embedding = np.mean(student_encodings, axis=0)
+                known_names.append(person_name)
+                known_encodings.append(avg_embedding)
 
-            print(f"[{idx}/{len(person_directories)}] Procesando: {person_name}")
+        logging.info(f"[TRAINER] Resumen: {fotos_reutilizadas} fotos recicladas de caché | {fotos_procesadas} fotos nuevas procesadas.")
 
-            images = [
-                f
-                for f in person_dir.iterdir()
-                if f.suffix.lower() in [".png", ".jpg", ".jpeg"]
-            ]
-
-            if not images:
-                print("  -> Carpeta vacía, se omite.")
-                continue
-
-            ok = 0
-            fail = 0
-
-            for img_path in images:
-                try:
-                    frame = cv2.imread(str(img_path))
-
-                    if frame is None:
-                        fail += 1
-                        continue
-
-                    # 1. Ejecutar Detección
-                    context = self.engine.detect(frame)
-
-                    if not context.faces:
-                        fail += 1
-                        continue
-
-                    face = context.faces[0]
-
-                    # 2. Ejecutar Extracción
-                    self.engine.extract_embedding(frame, face)
-
-                    if face.embedding is None:
-                        fail += 1
-                        continue
-
-                    encoding = face.embedding
-
-                    if len(encoding) != self.expected_dim:
-                        logger.warning(
-                            f"Dimensión inválida: {len(encoding)} != {self.expected_dim}"
-                        )
-                        fail += 1
-                        continue
-
-                    self.known_encodings.append(encoding)
-                    self.known_names.append(person_name)
-
-                    ok += 1
-
-                except Exception as e:
-                    logger.error(f"Error en {img_path}: {e}")
-                    fail += 1
-
-                total_ok += ok
-                total_fail += fail
-
-            print(f"  -> OK: {ok} | FAIL: {fail}")
-
-        elapsed = time.time() - start_time
-
-        print("\n" + "=" * 50)
-        print(" RESUMEN ENTRENAMIENTO ".center(50, "="))
-        print("=" * 50)
-        print(f"Personas: {len(person_directories)}")
-        print(f"Imágenes OK: {total_ok}")
-        print(f"Imágenes FAIL: {total_fail}")
-        print(f"Tiempo: {elapsed:.2f}s")
-        print("=" * 50)
-
+        # Devolvemos el diccionario enriquecido. 
+        # main_gui.py usará "names" y "encodings", ignorando "cache_imagenes".
         return {
-            "encodings": self.known_encodings,
-            "names": self.known_names,
+            "names": known_names,
+            "encodings": known_encodings,
+            "cache_imagenes": nueva_cache
         }
